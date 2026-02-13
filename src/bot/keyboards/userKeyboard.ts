@@ -1,11 +1,8 @@
 import { Markup } from 'telegraf';
 
-export const startKeyboard = Markup.inlineKeyboard([
-  [Markup.button.callback('Lihat Produk', 'USER_VIEW_PRODUCTS')]
+export const userMenuKeyboard = Markup.inlineKeyboard([
+  [Markup.button.callback('Lihat Produk', 'USER_PRODUCTS')],
+  [Markup.button.callback('Beli', 'SCENE_BUY')],
+  [Markup.button.callback('Sewa', 'SCENE_RENT')],
+  [Markup.button.callback('Status Sewa Saya', 'SCENE_MY_RENTALS')]
 ]);
-
-export function qtyKeyboard(productId: number) {
-  return Markup.inlineKeyboard([
-    [1, 2, 3].map((qty) => Markup.button.callback(String(qty), `BUY_QTY:${productId}:${qty}`))
-  ]);
-}
