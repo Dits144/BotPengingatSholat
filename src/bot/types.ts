@@ -1,7 +1,11 @@
-import { Context, Scenes } from 'telegraf';
+import { Context } from 'telegraf';
 
-export interface SessionData extends Scenes.WizardSessionData {
-  temp?: Record<string, unknown>;
+export interface SessionData {
+  activePage?: number;
+  awaiting?: 'qty' | 'product_search';
+  checkout?: { variantId: number; maxQty: number; price: number; productName: string; variantName: string; stockType: 'BUY' | 'RENT' };
 }
 
-export interface BotContext extends Context, Scenes.WizardContext<SessionData> {}
+export interface BotContext extends Context {
+  session: SessionData;
+}

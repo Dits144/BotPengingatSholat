@@ -1,27 +1,16 @@
 import { DateTime } from 'luxon';
 import { env } from '../config/env';
 
-export function nowTz(): DateTime {
+export function nowTz() {
   return DateTime.now().setZone(env.timezone);
 }
 
-export function addDuration(base: DateTime, months: number, days: number): DateTime {
-  return base.plus({ months, days });
+export function formatDateTimeWib(iso?: string | null) {
+  if (!iso) return '-';
+  return DateTime.fromISO(iso, { zone: env.timezone }).toFormat('yyyy-LL-dd HH:mm:ss');
 }
 
-export function formatDate(dateIso?: string | null): string {
-  if (!dateIso) return '-';
-  return DateTime.fromISO(dateIso, { zone: env.timezone }).toFormat('dd LLL yyyy HH:mm');
-}
-
-export function parseDurationText(text: string): { months: number; days: number } {
-  const lower = text.toLowerCase();
-  const monthMatch = lower.match(/(\d+)\s*bulan/);
-  const dayMatch = lower.match(/(\d+)\s*hari/);
-  const months = monthMatch ? Number(monthMatch[1]) : 0;
-  const days = dayMatch ? Number(dayMatch[1]) : 0;
-  if (months === 0 && days === 0) {
-    throw new Error('Format durasi tidak valid. Contoh: 1 bulan 5 hari');
-  }
-  return { months, days };
+export function formatHumanWib(iso?: string | null) {
+  const target = iso ? DateTime.fromISO(iso, { zone: env.timezone }) : nowTz();
+  return target.setLocale('id').toFormat('cccc, dd LLLL yyyy HH:mm:ss') + ' WIB';
 }

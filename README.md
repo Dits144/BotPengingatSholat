@@ -1,106 +1,107 @@
-# Telegram Bot Manajemen Stok Akun Digital
+# DITSTORE - Telegram Bot E-Commerce Digital
 
-Bot Telegram untuk CRUD stok akun digital (email + password), order FEFO, dan tracking masa aktif.
+Bot Telegram untuk jualan layanan premium (BUY + RENT) dengan saldo, topup QRIS manual approval, stok terenkripsi, dan panel admin.
 
-## Alasan memilih Node.js + TypeScript + Telegraf
-- Telegraf matang untuk Telegram Bot API dan mudah dipadukan dengan scene/wizard.
-- TypeScript memberi type-safety untuk state machine, service, dan query DB.
-- Ekosistem Node memudahkan enkripsi, CSV export, dan deployment.
+## Tech Stack
+- Node.js + TypeScript + Telegraf
+- Database: PostgreSQL/SQLite (via Knex)
+- Enkripsi stok: AES-256-GCM (`ENCRYPTION_KEY`)
+- Timezone default: `Asia/Jakarta`
 
-## Struktur Folder
+## Struktur Project
 
 ```txt
 src/
   bot/
-    handlers/        # command dan callback handlers
-    scenes/          # state machine (wizard)
-    keyboards/       # inline keyboard
-    middlewares/     # auth admin + rate limit
-    index.ts
+    index.ts                # command/callback/message handler utama
+    keyboards.ts            # inline keyboard user
+    middlewares/rateLimit.ts
     types.ts
-  services/          # business logic produk/stok/order/export/log
+  config/
+    env.ts
+    database.ts
   db/
-    migrations/      # SQL migration file
-    models/          # type model
-    migrate.ts       # runner migration
-  utils/             # tanggal, enkripsi, masking
-  config/            # env + database
-  index.ts           # app entry
+    migrate.ts
+    migrations/001_init.sql
+  services/
+    storeService.ts         # transaksi, topup, checkout, scheduler rental
+  utils/
+    encryption.ts
+    date.ts
+    format.ts
+    mask.ts
+  index.ts                  # launcher bot
+.env.example
 ```
 
 ## Fitur Utama
-- Admin only (`ADMIN_IDS`) untuk semua fitur manajemen.
-- Produk: tambah + list.
-- Stok akun: tambah dengan metode:
-  - A. durasi paket aktif saat dijual.
-  - B. sisa aktif sekarang (`1 bulan 5 hari`) => langsung hitung `expires_at`.
-- FEFO order: ambil akun `AVAILABLE` paling dekat expired.
-- Multi-qty order (1/2/3), akun tidak duplikat.
-- Status akun: `AVAILABLE`, `RESERVED`, `SOLD`, `EXPIRED`.
-- Auto mark expired.
-- Export CSV (safe/no password atau include password).
-- Encryption email/password di DB (AES-256-GCM, key dari ENV).
-- Log aktivitas: `ADD_STOCK`, `SELL`, `EXPORT`, `EDIT`, `DELETE` (DELETE disiapkan untuk perluasan).
-- Rate limit dasar user.
+- `/start` dengan box ASCII + statistik dari DB.
+- List produk paginasi 10 item + input angka + pencarian.
+- Detail produk + variasi harga/stok + refresh realtime.
+- `/saldo` + topup QRIS (`CREATED -> PENDING -> APPROVED/REJECTED`).
+- Approval topup oleh owner/admin.
+- Checkout anti-double-spend memakai DB transaction.
+- BUY: kirim akun stok sekali.
+- RENT: simpan masa aktif dan scheduler notifikasi H-3/H-1 + expired.
+- `/admin` dashboard ringkas A-J + audit log.
+- Semua nominal integer rupiah.
+- Log transaksi (`transaction_logs`), error (`error_logs`), audit admin (`audit_logs`).
 
-## Setup & Run
+## Database Schema
+Lihat: `src/db/migrations/001_init.sql`.
 
-1. Install dependency
+Tabel minimal tersedia:
+`users, products, variants, stock_items, invoices, invoice_items, topups, rentals, vouchers, audit_logs` (+ tabel log/error/admin).
+
+## Cara Menjalankan
+
 ```bash
 npm install
-```
-
-2. Siapkan env
-```bash
 cp .env.example .env
-# isi BOT_TOKEN, ADMIN_IDS, ENCRYPTION_KEY, dll
-```
-
-3. Jalankan migration
-```bash
 npm run migrate
-```
-
-4. Jalankan bot dev
-```bash
 npm run dev
 ```
 
-5. Build production
+Production:
 ```bash
-npm run build && npm start
+npm run build
+npm start
 ```
 
-## Konfigurasi ENV
-- `BOT_TOKEN`
-- `ADMIN_IDS` (pisahkan koma)
-- `TIMEZONE=Asia/Jakarta`
-- `ENCRYPTION_KEY`
-- `DATABASE_CLIENT=sqlite|postgres`
-- `DATABASE_URL` (contoh sqlite: `./data/bot.db`, postgres: full connection URI)
+## Seed Data Cepat (opsional)
+Contoh SQL manual:
+```sql
+INSERT INTO products(name,description,category,active) VALUES('ALIGHT MOTION','PRIVATE / SHARING / VOUCHER','EDITING',1);
+INSERT INTO variants(product_id,name,price,stock_type,duration_days,max_qty,active)
+VALUES(1,'35 Hari',2500,'RENT',35,5,1);
+```
 
-## Contoh Penggunaan
+## Sample Output Text
 
-### 1) Admin tambah stok CapCut dengan sisa aktif `1 bulan 5 hari`
-1. `/admin` -> `Tambah Produk` (jika belum ada) -> isi `CAPCUT PRO`, durasi default, catatan.
-2. `/admin` -> `Tambah Stok`.
-3. Pilih ID produk `CAPCUT PRO`.
-4. Input email + password.
-5. Pilih metode **B**.
-6. Input: `1 bulan 5 hari`.
-7. Bot simpan stok `AVAILABLE`, `start_at=now`, `expires_at=now + 1 bulan + 5 hari`.
+```txt
+╭─ LIST PRODUK
+┊ [ 1 ] ALIGHT MOTION
+┊ [ 2 ] CAPCUT PRO
+╰────────────
+Halaman 1 dari 1
+Ketik angka untuk buka detail produk.
+```
 
-### 2) User beli 1 akun
-1. `/start` -> `Lihat Produk` -> `/buy`.
-2. Pilih produk `CAPCUT PRO`, qty `1`.
-3. Bot keluarkan akun A (FEFO), ubah status jadi `SOLD`, isi `sold_to`, `sold_at`.
+```txt
+TOP-UP SALDO BERHASIL ✅
+╭─ Detail Transaksi
+┊ ID Transaksi: TOPUP-173000000
+┊ Jenis: Top-Up Saldo
+┊ Nominal: Rp 10.000
+┊ Total Bayar: Rp 10.000
+┊ Saldo saat ini: Rp 125.000
+╰────────────
+```
 
-### 3) User beli 1 akun lagi
-1. Ulangi `/buy` produk yang sama qty `1`.
-2. Bot keluarkan akun B (berbeda dengan akun A), karena akun A sudah `SOLD`.
+## Catatan Kepatuhan
+Gunakan sistem ini hanya untuk penjualan akses/akun yang punya izin resmi. Jika tidak, gunakan mode stok berupa voucher/kode lisensi resmi.
 
-## Catatan Upgrade PostgreSQL
-- Ubah `.env`:
-  - `DATABASE_CLIENT=postgres`
-  - `DATABASE_URL=postgres://user:pass@host:5432/dbname`
-- Jalankan migration yang sama via `npm run migrate`.
+## Bonus yang sudah ditambahkan
+- 🔎 Cari produk dari keyword.
+- Riwayat transaksi sudah tercatat di `transaction_logs`.
+- Pondasi auto announcement restock bisa dibuat dari trigger perubahan `stock_items`.

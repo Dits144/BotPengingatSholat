@@ -1,36 +1,142 @@
-CREATE TABLE IF NOT EXISTS products (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  name TEXT NOT NULL UNIQUE,
-  default_duration_months INTEGER NOT NULL DEFAULT 0,
-  default_duration_days INTEGER NOT NULL DEFAULT 30,
-  price NUMERIC NULL,
-  note TEXT NULL,
-  created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL
+CREATE TABLE IF NOT EXISTS users (
+  id BIGINT PRIMARY KEY,
+  username TEXT,
+  name TEXT NOT NULL,
+  balance BIGINT NOT NULL DEFAULT 0,
+  total_spent BIGINT NOT NULL DEFAULT 0,
+  blacklisted INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE TABLE IF NOT EXISTS stock_accounts (
+CREATE TABLE IF NOT EXISTS admins (
+  id BIGINT PRIMARY KEY,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS products (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  description TEXT,
+  category TEXT,
+  active INTEGER NOT NULL DEFAULT 1,
+  terms_template TEXT,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS variants (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   product_id INTEGER NOT NULL,
-  email_encrypted TEXT NOT NULL,
-  password_encrypted TEXT NOT NULL,
-  added_at TEXT NOT NULL,
-  start_at TEXT NULL,
-  expires_at TEXT NULL,
-  status TEXT NOT NULL,
-  sold_to TEXT NULL,
-  sold_at TEXT NULL,
-  note TEXT NULL,
-  activate_on_sale INTEGER NOT NULL DEFAULT 0,
-  duration_months INTEGER NOT NULL DEFAULT 0,
-  duration_days INTEGER NOT NULL DEFAULT 0,
+  name TEXT NOT NULL,
+  price BIGINT NOT NULL,
+  stock_type TEXT NOT NULL,
+  duration_days INTEGER,
+  max_qty INTEGER NOT NULL DEFAULT 1,
+  active INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY(product_id) REFERENCES products(id)
 );
 
-CREATE TABLE IF NOT EXISTS activity_logs (
+CREATE TABLE IF NOT EXISTS stock_items (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  action TEXT NOT NULL,
-  actor TEXT NOT NULL,
-  payload TEXT NULL,
-  created_at TEXT NOT NULL
+  variant_id INTEGER NOT NULL,
+  label TEXT,
+  encrypted_payload TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'AVAILABLE',
+  sold_at TEXT,
+  invoice_id INTEGER,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY(variant_id) REFERENCES variants(id)
 );
+
+CREATE TABLE IF NOT EXISTS invoices (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  invoice_code TEXT NOT NULL UNIQUE,
+  user_id BIGINT NOT NULL,
+  total BIGINT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'PAID',
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY(user_id) REFERENCES users(id)
+);
+
+CREATE TABLE IF NOT EXISTS invoice_items (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  invoice_id INTEGER NOT NULL,
+  variant_id INTEGER NOT NULL,
+  qty INTEGER NOT NULL,
+  price_each BIGINT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY(invoice_id) REFERENCES invoices(id),
+  FOREIGN KEY(variant_id) REFERENCES variants(id)
+);
+
+CREATE TABLE IF NOT EXISTS topups (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  topup_code TEXT NOT NULL UNIQUE,
+  user_id BIGINT NOT NULL,
+  amount BIGINT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'PENDING',
+  rejection_reason TEXT,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  approved_by BIGINT,
+  approved_at TEXT,
+  FOREIGN KEY(user_id) REFERENCES users(id)
+);
+
+CREATE TABLE IF NOT EXISTS rentals (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id BIGINT NOT NULL,
+  variant_id INTEGER NOT NULL,
+  stock_item_id INTEGER NOT NULL,
+  start_at TEXT NOT NULL,
+  end_at TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'ACTIVE',
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY(user_id) REFERENCES users(id),
+  FOREIGN KEY(variant_id) REFERENCES variants(id),
+  FOREIGN KEY(stock_item_id) REFERENCES stock_items(id)
+);
+
+CREATE TABLE IF NOT EXISTS vouchers (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  code TEXT NOT NULL UNIQUE,
+  type TEXT NOT NULL,
+  value BIGINT NOT NULL,
+  max_use INTEGER NOT NULL,
+  used_count INTEGER NOT NULL DEFAULT 0,
+  expiry TEXT,
+  active INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS transaction_logs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id BIGINT,
+  category TEXT NOT NULL,
+  reference_code TEXT,
+  amount BIGINT NOT NULL,
+  detail_json TEXT,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS error_logs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  message TEXT NOT NULL,
+  stack TEXT,
+  meta_json TEXT,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS audit_logs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  admin_id BIGINT NOT NULL,
+  action TEXT NOT NULL,
+  detail_json TEXT,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_stock_variant_status ON stock_items(variant_id, status);
+CREATE INDEX IF NOT EXISTS idx_topups_status ON topups(status);
+CREATE INDEX IF NOT EXISTS idx_rentals_end_at ON rentals(end_at, status);
