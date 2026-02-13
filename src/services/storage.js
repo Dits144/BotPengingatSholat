@@ -1,7 +1,8 @@
 const fs = require('fs');
 const path = require('path');
-const crypto = require('crypto');
 const { dataDir } = require('../config');
+
+const CLAIM_OWNER_SECRET = 'qwertyuiopasdfghjklzxcvbnm';
 
 const files = {
   owner: path.join(dataDir, 'owner.json'),
@@ -19,12 +20,11 @@ function ensureDataFiles() {
   initFile(files.groups, { groups: {} });
 
   if (!fs.existsSync(files.owner)) {
-    const ownerPassword = crypto.randomBytes(24).toString('base64url');
-    const payload = { ownerJid: null, ownerPassword, createdAt: new Date().toISOString() };
+    const payload = { ownerJid: null, ownerPassword: CLAIM_OWNER_SECRET, createdAt: new Date().toISOString() };
     fs.writeFileSync(files.owner, JSON.stringify(payload, null, 2));
-    console.log(`\n[Ditstore Bot] Password owner pertama kali dibuat:`);
-    console.log(`[Ditstore Bot] ${ownerPassword}`);
-    console.log('[Ditstore Bot] Simpan password ini baik-baik. Jangan dibagikan ke grup.\n');
+    console.log('\n[Ditstore Bot] Claim owner code aktif:');
+    console.log(`[Ditstore Bot] ${CLAIM_OWNER_SECRET}`);
+    console.log('[Ditstore Bot] Ketik code ini di grup mana saja untuk claim owner pertama.\n');
   }
 }
 
@@ -48,7 +48,7 @@ function writeJson(filePath, data) {
 }
 
 function getOwnerData() {
-  return readJson(files.owner, { ownerJid: null, ownerPassword: null });
+  return readJson(files.owner, { ownerJid: null, ownerPassword: CLAIM_OWNER_SECRET });
 }
 
 function claimOwner(jid, passwordInput) {
@@ -75,6 +75,7 @@ function updateGroup(groupId, patch) {
 }
 
 module.exports = {
+  CLAIM_OWNER_SECRET,
   files,
   ensureDataFiles,
   readJson,

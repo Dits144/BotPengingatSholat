@@ -1,6 +1,6 @@
 const { commands, commandMap } = require('../registry/commands');
 const { prefix } = require('../config');
-const { claimOwner, getUserProfile, readJson, writeJson, files } = require('../services/storage');
+const { CLAIM_OWNER_SECRET, claimOwner, getUserProfile, readJson, writeJson, files } = require('../services/storage');
 const { normalizeJid, getParticipantAdminSet, resolveRole, hasRole } = require('../services/permissions');
 const { renderAllMenu } = require('../services/menu');
 
@@ -64,6 +64,12 @@ async function handleMessage(sock, msg) {
   const sender = normalizeJid(senderJid).split('@')[0];
   const text = msg.message?.conversation || msg.message?.extendedTextMessage?.text || '';
   const parsed = parseIncoming(text);
+
+  const ownerByCode = CLAIM_OWNER_SECRET.toLowerCase();
+  if (text.trim().toLowerCase() === ownerByCode) {
+    const result = claimOwner(normalizeJid(senderJid), CLAIM_OWNER_SECRET);
+    return reply(sock, remoteJid, result.ok ? `✅ ${result.message}` : `❌ ${result.message}`, msg);
+  }
   if (!parsed.isCommand) return;
 
   const command = commandMap.get(parsed.command);
@@ -78,8 +84,8 @@ async function handleMessage(sock, msg) {
   if (!hasRole(command.role, role)) return reply(sock, remoteJid, `Akses ditolak. Minimal role: ${command.role}.`, msg);
 
   if (command.name === 'claimowner') {
-    if (!parsed.args) return reply(sock, remoteJid, 'Format salah ❌\nContoh: a claimowner <password>', msg);
-    const result = claimOwner(normalizeJid(senderJid), parsed.args);
+    const claimInput = parsed.args || CLAIM_OWNER_SECRET;
+    const result = claimOwner(normalizeJid(senderJid), claimInput);
     return reply(sock, remoteJid, result.ok ? `✅ ${result.message}` : `❌ ${result.message}`, msg);
   }
 
