@@ -4,9 +4,13 @@ import { BotContext } from './types';
 import { rateLimit } from './middlewares/rateLimit';
 import { box, rp } from '../utils/format';
 import { formatDateTimeWib, formatHumanWib, nowTz } from '../utils/date';
-import { createTopup, ensureUser, getBotStats, getTopupByCode, isAdmin, listProducts, listVariants, markTopupPending, schedulerRentalAlerts, setTopupStatus, buyVariant } from '../services/storeService';
+import { buyVariant, createTopup, ensureUser, getBotStats, getTopupByCode, listProducts, listVariants, markTopupPending, schedulerRentalAlerts } from '../services/storeService';
 import { db } from '../config/database';
 import { mainMenuKb, productPageKb } from './keyboards';
+import { isAdminUser } from '../admin/adminAuth';
+import { adminMenuShortcutIfAdmin, topupPendingActions } from '../admin/adminMenu';
+import { registerAdminRouter } from '../admin/adminRouter';
+import { registerAdminFlows, getSetting, topupActionBox } from '../admin/adminFlows';
 
 async function renderStart(ctx: BotContext) {
   if (!ctx.from) return;
@@ -28,6 +32,8 @@ async function renderStart(ctx: BotContext) {
     box('SHORTCUTS', ['/start', '/saldo', '/stok', '/vouchers'])
   ].join('\n');
   await ctx.reply(text, mainMenuKb);
+  const adminKb = adminMenuShortcutIfAdmin(await isAdminUser(ctx.from.id));
+  if (adminKb) await ctx.reply('Akses admin terdeteksi.', adminKb);
 }
 
 async function renderProductList(ctx: BotContext, page = 1, query?: string) {
@@ -44,12 +50,17 @@ export function createBot() {
   bot.use(session({ defaultSession: () => ({}) }));
   bot.use(rateLimit);
 
+  registerAdminRouter(bot);
+  registerAdminFlows(bot);
+
   bot.start(renderStart);
   bot.command('saldo', async (ctx) => {
     if (!ctx.from) return;
     await ensureUser(ctx.from.id, ctx.from.username, ctx.from.first_name || 'User');
     const user = await db('users').where({ id: ctx.from.id }).first();
-    const buttons = env.topupPresets.map((n) => Markup.button.callback(n.toLocaleString('id-ID'), `TOPUP_NOM:${n}`));
+    const dynamic = (await getSetting('topup_presets')) || env.topupPresets.join(',');
+    const presets = dynamic.split(',').map((v) => Number(v.trim())).filter((v) => Number.isFinite(v) && v > 0);
+    const buttons = presets.map((n) => Markup.button.callback(n.toLocaleString('id-ID'), `TOPUP_NOM:${n}`));
     const chunks = [] as typeof buttons[];
     for (let i = 0; i < buttons.length; i += 2) chunks.push(buttons.slice(i, i + 2));
     await ctx.reply(`Detail Saldo Anda di DITSTORE\nSaldo Anda saat ini: ${rp(user?.balance || 0)}\nMau isi saldo? Silakan pilih nominal dibawah ini:`, Markup.inlineKeyboard(chunks));
@@ -61,41 +72,13 @@ export function createBot() {
     await ctx.reply(box('VOUCHERS', list.length ? list.map((v) => `${v.code} - ${v.type} ${v.value}`) : ['Belum ada voucher']));
   });
 
-  bot.command('admin', async (ctx) => {
-    if (!ctx.from || !(await isAdmin(ctx.from.id, env.ownerId))) return;
-    const pendingTopup = await db('topups').where({ status: 'PENDING' }).count<{ count: number }[]>({ count: '*' }).first();
-    await ctx.reply(box('ADMIN PANEL', [
-      'A. Dashboard',
-      `Topup pending: ${pendingTopup?.count || 0}`,
-      'B. Produk & Variasi',
-      'C. Stok',
-      'D. Topup',
-      'E. Pesanan / Invoice',
-      'F. Rental',
-      'G. User Management',
-      'H. Voucher/Promo',
-      'I. Broadcast',
-      'J. Settings'
-    ]));
-  });
-
   bot.action('LIST_PRODUCTS', (ctx) => renderProductList(ctx, 1));
-  bot.action(/PRODUCT_PAGE:(\d+)/, async (ctx) => {
-    const page = Number(ctx.match[1]);
-    await ctx.answerCbQuery();
-    await renderProductList(ctx, page);
-  });
-  bot.action('MENU', async (ctx) => {
-    await ctx.answerCbQuery();
-    await renderStart(ctx);
-  });
+  bot.action(/PRODUCT_PAGE:(\d+)/, async (ctx) => { await ctx.answerCbQuery(); await renderProductList(ctx, Number(ctx.match[1])); });
+  bot.action('MENU', async (ctx) => { await ctx.answerCbQuery(); await renderStart(ctx); });
   bot.action('SHOW_SALDO', async (ctx) => { await ctx.answerCbQuery(); await ctx.telegram.sendMessage(ctx.chat!.id, '/saldo'); });
   bot.action('SHOW_VOUCHER', async (ctx) => { await ctx.answerCbQuery(); await ctx.telegram.sendMessage(ctx.chat!.id, '/vouchers'); });
   bot.action('SHOW_STOK', async (ctx) => { await ctx.answerCbQuery(); await renderProductList(ctx, 1); });
-  bot.action('HELP', async (ctx) => {
-    await ctx.answerCbQuery();
-    await ctx.reply('Butuh bantuan? Hubungi admin DITSTORE.');
-  });
+  bot.action('HELP', async (ctx) => { await ctx.answerCbQuery(); await ctx.reply('Butuh bantuan? Hubungi admin DITSTORE.'); });
 
   bot.action('SEARCH_PRODUCT', async (ctx) => {
     await ctx.answerCbQuery();
@@ -127,9 +110,7 @@ export function createBot() {
     const [available] = await db('stock_items').where({ variant_id: variantId, status: 'AVAILABLE' }).count<{ count: number }[]>({ count: '*' });
     if (Number(available.count) <= 0) return void ctx.reply('Stok habis');
     const user = await db('users').where({ id: ctx.from!.id }).first();
-    if (Number(user.balance) < Number(variant.price)) {
-      return void ctx.reply('Saldo kurang', Markup.inlineKeyboard([[Markup.button.callback('💳 Topup', 'SHOW_SALDO')]]));
-    }
+    if (Number(user.balance) < Number(variant.price)) return void ctx.reply('Saldo kurang', Markup.inlineKeyboard([[Markup.button.callback('💳 Topup', 'SHOW_SALDO')]]));
     ctx.session.awaiting = 'qty';
     ctx.session.checkout = { variantId, maxQty: Math.min(Number(variant.max_qty || 1), Number(available.count)), price: Number(variant.price), productName: '-', variantName: variant.name, stockType: variant.stock_type };
     await ctx.reply(`Masukkan jumlah pesanan (angka). Maksimal ${ctx.session.checkout.maxQty}`);
@@ -140,12 +121,10 @@ export function createBot() {
     const amount = Number(ctx.match[1]);
     const topup = await createTopup(ctx.from!.id, amount);
     const caption = box('TOPUP QRIS', [`ID Topup: ${topup.code}`, `Nominal: ${rp(amount)}`, "Transfer sesuai nominal, lalu klik tombol 'Saya sudah bayar'"]);
-    const kb = Markup.inlineKeyboard([
-      [Markup.button.callback('✅ Saya sudah bayar', `TOPUP_PAID:${topup.code}`)],
-      [Markup.button.callback('❌ Batalkan', `TOPUP_CANCEL:${topup.code}`)]
-    ]);
-    if (env.qrisImage) await ctx.replyWithPhoto(env.qrisImage, { caption, ...kb });
-    else await ctx.reply(caption, kb);
+    const kb = Markup.inlineKeyboard([[Markup.button.callback('✅ Saya sudah bayar', `TOPUP_PAID:${topup.code}`)], [Markup.button.callback('❌ Batalkan', `TOPUP_CANCEL:${topup.code}`)]]);
+    const qris = await getSetting('qris_file_id');
+    if (!qris) return void ctx.reply('QRIS belum di-set admin.');
+    await ctx.replyWithPhoto(qris, { caption, ...kb });
   });
 
   bot.action(/TOPUP_PAID:(.+)/, async (ctx) => {
@@ -156,34 +135,7 @@ export function createBot() {
     await ctx.reply('Topup masuk antrian verifikasi admin.');
     if (!topup) return;
     const user = await db('users').where({ id: topup.user_id }).first();
-    await ctx.telegram.sendMessage(env.ownerId, box('TOPUP PENDING', [
-      `Nama: ${user?.name}`,
-      `Username: @${user?.username || '-'}`,
-      `ID: ${topup.user_id}`,
-      `Nominal: ${rp(topup.amount)}`,
-      `ID Topup: ${topup.topup_code}`
-    ]), Markup.inlineKeyboard([[Markup.button.callback('✅ Approve', `ADMIN_TOPUP_OK:${code}`), Markup.button.callback('❌ Reject', `ADMIN_TOPUP_NO:${code}`)]]));
-  });
-
-  bot.action(/ADMIN_TOPUP_OK:(.+)/, async (ctx) => {
-    if (!(await isAdmin(ctx.from!.id, env.ownerId))) return;
-    const code = ctx.match[1];
-    await setTopupStatus(code, 'APPROVED', ctx.from!.id);
-    const topup = await getTopupByCode(code);
-    const user = topup ? await db('users').where({ id: topup.user_id }).first() : null;
-    if (topup && user) {
-      await ctx.telegram.sendMessage(topup.user_id, `TOP-UP SALDO BERHASIL ✅\n${box('Detail Transaksi', [`ID Transaksi: ${topup.topup_code}`, 'Jenis: Top-Up Saldo', `Nominal: ${rp(topup.amount)}`, `Total Bayar: ${rp(topup.amount)}`, `Saldo saat ini: ${rp(user.balance)}`])}`);
-    }
-    await ctx.answerCbQuery('Approved');
-  });
-
-  bot.action(/ADMIN_TOPUP_NO:(.+)/, async (ctx) => {
-    if (!(await isAdmin(ctx.from!.id, env.ownerId))) return;
-    const code = ctx.match[1];
-    await setTopupStatus(code, 'REJECTED', ctx.from!.id, 'Ditolak admin');
-    const topup = await getTopupByCode(code);
-    if (topup) await ctx.telegram.sendMessage(topup.user_id, `Topup ${code} ditolak admin.`);
-    await ctx.answerCbQuery('Rejected');
+    await ctx.telegram.sendMessage(env.ownerId, topupActionBox(user?.name || '-', user?.username || '-', topup.user_id, topup.amount, topup.topup_code), topupPendingActions(code));
   });
 
   bot.on('text', async (ctx) => {
@@ -192,7 +144,6 @@ export function createBot() {
       ctx.session.awaiting = undefined;
       return renderProductList(ctx, 1, text);
     }
-
     if (ctx.session.awaiting === 'qty' && ctx.session.checkout) {
       const qty = Number(text);
       if (!Number.isInteger(qty) || qty <= 0 || qty > ctx.session.checkout.maxQty) return void ctx.reply('Jumlah tidak valid.');
@@ -210,13 +161,10 @@ export function createBot() {
       }
       return;
     }
-
     const productNumber = Number(text);
     if (Number.isInteger(productNumber) && productNumber > 0) {
       const product = await db('products').where({ id: productNumber }).first();
-      if (product) {
-        return ctx.reply(`Membuka detail produk #${productNumber}`, Markup.inlineKeyboard([[Markup.button.callback('Buka Detail', `DETAIL_PRODUCT:${productNumber}`)]]));
-      }
+      if (product) return ctx.reply(`Membuka detail produk #${productNumber}`, Markup.inlineKeyboard([[Markup.button.callback('Buka Detail', `DETAIL_PRODUCT:${productNumber}`)]]));
     }
   });
 

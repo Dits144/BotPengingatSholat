@@ -105,3 +105,16 @@ Gunakan sistem ini hanya untuk penjualan akses/akun yang punya izin resmi. Jika 
 - 🔎 Cari produk dari keyword.
 - Riwayat transaksi sudah tercatat di `transaction_logs`.
 - Pondasi auto announcement restock bisa dibuat dari trigger perubahan `stock_items`.
+
+## Admin Module Baru
+Struktur admin sekarang dipisah rapi:
+- `src/admin/adminAuth.ts` (auth admin + audit log)
+- `src/admin/adminMenu.ts` (renderer teks + inline keyboard)
+- `src/admin/adminRouter.ts` (routing callback `admin:*`)
+- `src/admin/adminFlows.ts` (state machine input text/photo)
+- `src/admin/adminState.ts` (persist state admin di DB `admin_states`)
+
+Contoh callback mapping:
+- `admin:home`, `admin:dashboard`, `admin:products`, `admin:stock`, `admin:topup`
+- `admin:orders`, `admin:rentals`, `admin:users`, `admin:vouchers`, `admin:broadcast`, `admin:settings`
+- Upload QRIS: `admin:settings:qris` -> state `ADMIN_SETTINGS_QRIS_WAIT_PHOTO` -> simpan `settings.qris_file_id`.

@@ -140,3 +140,17 @@ CREATE TABLE IF NOT EXISTS audit_logs (
 CREATE INDEX IF NOT EXISTS idx_stock_variant_status ON stock_items(variant_id, status);
 CREATE INDEX IF NOT EXISTS idx_topups_status ON topups(status);
 CREATE INDEX IF NOT EXISTS idx_rentals_end_at ON rentals(end_at, status);
+
+
+CREATE TABLE IF NOT EXISTS settings (
+  key TEXT PRIMARY KEY,
+  value TEXT,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS admin_states (
+  admin_id BIGINT PRIMARY KEY,
+  state TEXT NOT NULL,
+  payload_json TEXT,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
