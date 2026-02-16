@@ -1,46 +1,54 @@
 # Ditstore Bot (WhatsApp + Baileys)
 
-Bot WhatsApp untuk operasional order produk digital Ditstore, fokus pemakaian di grup.
+Bot WhatsApp untuk operasional order produk digital Ditstore (fokus grup).
 
 ## Jalankan
-
 ```bash
 npm install
 npm start
 ```
 
-## Login bot (barcode/QR)
-Saat `npm start`, bot akan menampilkan barcode QR di terminal (`printQRInTerminal: true`).
-Scan QR tersebut dari WhatsApp agar sesi login tersimpan di folder `./auth` (multi-file auth).
+## Login Barcode/QR
+Saat start, bot menampilkan QR di terminal. Scan QR agar session tersimpan di `./auth` (multi-file auth).
 
-## Konfigurasi
+## Aturan umum command
+- Prefix utama: `a` → contoh `a sticker`
+- Alias pakai `|` di registry → contoh `a spdl` sama dengan `a spotifydl`
+- `<...>` wajib diisi, `[...]` opsional
+- Nomor pakai format internasional `628xxxx`
+- Mention tag: `@628xxxx`
 
-```bash
-cp .env.example .env
+## Claim owner lintas grup
+Ketik kode berikut di grup mana pun untuk claim owner pertama:
+```text
+qwertyuiopasdfghjklzxcvbnm
+```
+Atau command:
+```text
+a claimowner qwertyuiopasdfghjklzxcvbnm
 ```
 
-Data lokal otomatis dibuat:
+## Format error seragam
+Untuk command yang butuh argumen, bot membalas template:
+```text
+Format salah ❌
+
+Contoh: a <cmd> <format_benar>
+
+Keterangan singkat
+```
+Contoh khusus:
+```text
+Format salah ❌
+
+Contoh: a addlist Capcut Pro@1 bulan private@35000
+
+Note: gunakan @ sebagai pemisah.
+```
+
+## Data lokal
 - `data/owner.json`
 - `data/store.json`
 - `data/orders.json`
 - `data/users.json`
 - `data/groups.json`
-
-## Claim owner di semua grup
-Claim owner pertama bisa dilakukan dari grup mana pun dengan mengetik code berikut:
-
-```text
-qwertyuiopasdfghjklzxcvbnm
-```
-
-Alternatif command tetap didukung:
-
-```text
-a claimowner qwertyuiopasdfghjklzxcvbnm
-```
-
-Setelah owner ter-claim, klaim berikutnya ditolak sampai di-reset manual pada `data/owner.json`.
-
-## Format command
-- Prefix utama: `a`
-- Shortcut store: `.p`, `.d`, `.b`, `.r`

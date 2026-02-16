@@ -44,6 +44,8 @@ function readJson(filePath, fallback = {}) {
 }
 
 function writeJson(filePath, data) {
+  const dir = path.dirname(filePath);
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
 }
 
