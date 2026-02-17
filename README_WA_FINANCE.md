@@ -9,6 +9,7 @@
 - `commands/rental.js` → cek sewa aktif + warning masa sewa mau habis (anti spam 24 jam).
 - `commands/owner.js` → command `#infogroup`, `#aktif`, `#nonaktif`, `#statussewa`.
 - `commands/calc.js` → kalkulator.
+- `utils/jid.js` → normalisasi JID (`:deviceId`, `@c.us`) agar validasi OWNER stabil di mode multi-device.
 - `commands/help.js` dan `commands/info.js` → bantuan dan info grup.
 - `utils/parser.js` + `utils/format.js` → parser input dan formatter angka/tanggal WIB.
 
@@ -124,3 +125,7 @@ Jika sewa belum aktif dan user pakai command keuangan:
 
 Hubungi owner untuk aktivasi.
 ```
+
+## Catatan Owner JID
+
+- Validasi owner command `#` sudah memakai normalisasi JID (contoh `628xxx:17@s.whatsapp.net` tetap dikenali sebagai owner).

@@ -2,6 +2,7 @@ const { default: makeWASocket, useMultiFileAuthState, fetchLatestBaileysVersion,
 const pino = require('pino');
 const qrcode = require('qrcode-terminal');
 const { OWNER_NUMBERS, AUTH_DIR, LOG_LEVEL } = require('./config');
+const { normalizeJid, getSenderJid, isOwner } = require('./utils/jid');
 const { menuText } = require('./commands/help');
 const { handleCalc } = require('./commands/calc');
 const finance = require('./commands/finance');
@@ -17,7 +18,8 @@ function getText(msg) {
 }
 
 function isAdmin(participants, senderId) {
-  const p = participants.find((x) => x.id === senderId);
+  const sender = normalizeJid(senderId);
+  const p = participants.find((x) => normalizeJid(x.id) === sender);
   return Boolean(p?.admin);
 }
 
@@ -66,7 +68,7 @@ async function start() {
 
     const groupId = msg.key.remoteJid;
     const isGroupMessage = groupId.endsWith('@g.us');
-    const senderId = msg.key.participant || msg.key.remoteJid;
+    const senderId = normalizeJid(getSenderJid(msg));
     const senderName = msg.pushName || 'Tanpa Nama';
 
     try {
@@ -76,7 +78,12 @@ async function start() {
       }
 
       if (/^#/.test(text)) {
-        if (!OWNER_NUMBERS.includes(senderId)) {
+        if (process.env.DEBUG_JID === '1') {
+          console.log('SENDER RAW:', getSenderJid(msg));
+          console.log('SENDER NORMALIZED:', senderId);
+        }
+
+        if (!isOwner(senderId, OWNER_NUMBERS)) {
           await sock.sendMessage(groupId, { text: '❌ Perintah ini hanya untuk OWNER bot.' }, { quoted: msg });
           return;
         }
