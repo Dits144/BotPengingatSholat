@@ -1,8 +1,9 @@
 const { default: makeWASocket, useMultiFileAuthState, fetchLatestBaileysVersion, DisconnectReason } = require('baileys');
 const pino = require('pino');
 const qrcode = require('qrcode-terminal');
-const { OWNER_NUMBERS, AUTH_DIR, LOG_LEVEL } = require('./config');
-const { normalizeJid, getSenderJid, isOwner } = require('./utils/jid');
+const { OWNER_NUMBERS, AUTH_DIR, LOG_LEVEL, CLAIM_OWNER_CODE } = require('./config');
+const { addOwner, getOwnerNumbers } = require('./db/database');
+const { normalizeJid, extractUserNumber, getSenderJid, isOwner } = require('./utils/jid');
 const { menuText } = require('./commands/help');
 const { handleCalc } = require('./commands/calc');
 const finance = require('./commands/finance');
@@ -21,6 +22,13 @@ function isAdmin(participants, senderId) {
   const sender = normalizeJid(senderId);
   const p = participants.find((x) => normalizeJid(x.id) === sender);
   return Boolean(p?.admin);
+}
+
+
+function isSenderOwner(senderJid) {
+  const dynamicOwnerNumbers = getOwnerNumbers();
+  const ownerPool = [...OWNER_NUMBERS, ...dynamicOwnerNumbers];
+  return isOwner(senderJid, ownerPool);
 }
 
 function inCooldown(senderId, key, ms = 1000) {
@@ -77,13 +85,29 @@ async function start() {
         if (warning) await sock.sendMessage(groupId, { text: warning });
       }
 
+      if (text.trim() === CLAIM_OWNER_CODE) {
+        const senderNumber = extractUserNumber(senderId);
+        if (!senderNumber) {
+          await sock.sendMessage(groupId, { text: 'Gagal klaim owner: nomor pengirim tidak valid.' }, { quoted: msg });
+          return;
+        }
+
+        addOwner(senderNumber, senderId);
+        await sock.sendMessage(groupId, {
+          text: `✅ Owner berhasil diklaim.
+Nomor: ${senderNumber}
+Sekarang kamu bisa pakai command owner (#).`
+        }, { quoted: msg });
+        return;
+      }
+
       if (/^#/.test(text)) {
         if (process.env.DEBUG_JID === '1') {
           console.log('SENDER RAW:', getSenderJid(msg));
           console.log('SENDER NORMALIZED:', senderId);
         }
 
-        if (!isOwner(senderId, OWNER_NUMBERS)) {
+        if (!isSenderOwner(senderId)) {
           await sock.sendMessage(groupId, { text: '❌ Perintah ini hanya untuk OWNER bot.' }, { quoted: msg });
           return;
         }

@@ -129,3 +129,11 @@ Hubungi owner untuk aktivasi.
 ## Catatan Owner JID
 
 - Validasi owner command `#` sudah memakai normalisasi JID (contoh `628xxx:17@s.whatsapp.net`, `628xxx@c.us`, atau `628xxx@lid` tetap dikenali sebagai owner).
+
+
+## Klaim Owner Cepat
+
+- Kirim pesan: `Ditsanalah144`
+- Bot akan menyimpan nomor kamu sebagai owner (persistent di SQLite tabel `bot_owners`).
+- Setelah itu command `#infogroup`, `#aktif`, `#nonaktif`, `#statussewa` bisa dipakai dari nomor tersebut.
+- Kode klaim bisa diubah via env: `CLAIM_OWNER_CODE` (default `Ditsanalah144`).

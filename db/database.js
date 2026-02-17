@@ -31,6 +31,13 @@ CREATE TABLE IF NOT EXISTS group_rentals (
   updated_at TEXT NOT NULL,
   last_warned_at TEXT
 );
+
+
+CREATE TABLE IF NOT EXISTS bot_owners (
+  user_number TEXT PRIMARY KEY,
+  user_jid TEXT,
+  claimed_at TEXT NOT NULL
+);
 `);
 
 function nowWibIso() {
@@ -112,6 +119,24 @@ function markWarned(groupId) {
   db.prepare('UPDATE group_rentals SET last_warned_at=? WHERE group_id=?').run(nowWibIso(), groupId);
 }
 
+
+function addOwner(userNumber, userJid) {
+  const now = nowWibIso();
+  db.prepare(`
+    INSERT INTO bot_owners (user_number, user_jid, claimed_at)
+    VALUES (?, ?, ?)
+    ON CONFLICT(user_number) DO UPDATE SET
+      user_jid=excluded.user_jid,
+      claimed_at=excluded.claimed_at
+  `).run(userNumber, userJid, now);
+}
+
+function getOwnerNumbers() {
+  const rows = db.prepare('SELECT user_number FROM bot_owners').all();
+  return rows.map((r) => r.user_number);
+}
+
+
 module.exports = {
   db,
   insertTransaction,
@@ -122,5 +147,7 @@ module.exports = {
   extendRental,
   deactivateRental,
   markWarned,
+  addOwner,
+  getOwnerNumbers,
   nowWibIso
 };

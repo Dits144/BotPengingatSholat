@@ -13,5 +13,6 @@ module.exports = {
   TIMEZONE: process.env.TIMEZONE || 'Asia/Jakarta',
   AUTH_DIR: process.env.AUTH_DIR || 'auth_info_baileys',
   DB_PATH: process.env.DB_PATH || './db/finance.sqlite',
-  LOG_LEVEL: process.env.LOG_LEVEL || 'silent'
+  LOG_LEVEL: process.env.LOG_LEVEL || 'silent',
+  CLAIM_OWNER_CODE: process.env.CLAIM_OWNER_CODE || 'Ditsanalah144'
 };
