@@ -1,0 +1,11 @@
+const OWNER_WA_ID = "6285882846665@s.whatsapp.net";
+const OWNER_NUMBER = "6285882846665";
+const DEFAULT_RESET_TIME = "00:00";
+const DEFAULT_TIMEZONE = "Asia/Jakarta";
+
+module.exports = {
+  OWNER_NUMBER,
+  OWNER_WA_ID,
+  DEFAULT_RESET_TIME,
+  DEFAULT_TIMEZONE,
+};

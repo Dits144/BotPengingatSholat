@@ -1,0 +1,16 @@
+{
+  "name": "odoj-ramadhan-bot",
+  "version": "1.0.0",
+  "description": "ODOJ Ramadhan Bot for WhatsApp groups",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "@whiskeysockets/baileys": "^6.6.0",
+    "date-fns": "^3.6.0",
+    "date-fns-tz": "^3.1.3",
+    "node-cron": "^3.0.3",
+    "qrcode-terminal": "^0.12.0"
+  }
+}
