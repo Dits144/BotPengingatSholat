@@ -69,6 +69,7 @@ Script:
    npm start
    ```
 4. Scan QR di terminal.
+   - Jika QR tidak muncul, hapus folder `auth_info_baileys` lalu jalankan `npm start` lagi agar session login baru dibuat.
 
 ## Contoh Chat Usage
 

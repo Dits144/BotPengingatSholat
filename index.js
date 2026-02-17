@@ -1,5 +1,6 @@
 const { default: makeWASocket, useMultiFileAuthState, fetchLatestBaileysVersion, DisconnectReason } = require('baileys');
 const pino = require('pino');
+const qrcode = require('qrcode-terminal');
 const { OWNER_NUMBERS, AUTH_DIR, LOG_LEVEL } = require('./config');
 const { menuText } = require('./commands/help');
 const { handleCalc } = require('./commands/calc');
@@ -41,7 +42,12 @@ async function start() {
   });
 
   sock.ev.on('creds.update', saveCreds);
-  sock.ev.on('connection.update', ({ connection, lastDisconnect }) => {
+  sock.ev.on('connection.update', ({ connection, lastDisconnect, qr }) => {
+    if (qr) {
+      console.log('📱 Scan QR berikut di WhatsApp (Linked Devices):');
+      qrcode.generate(qr, { small: true });
+    }
+
     if (connection === 'open') console.log('✅ Bot connected');
     if (connection === 'close') {
       const code = lastDisconnect?.error?.output?.statusCode;
