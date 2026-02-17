@@ -38,7 +38,17 @@ export function normalizeUserJid(jid) {
     if (jid.endsWith("@c.us")) {
       return jid.replace("@c.us", "@s.whatsapp.net");
     }
+
+    if (jid.endsWith("@lid")) {
+      const user = jid.split("@")[0].split(":")[0];
+      return `${user}@s.whatsapp.net`;
+    }
+
     return jid;
   }
   return `${jid}@s.whatsapp.net`;
+}
+
+export function isPrivateChatJid(jid = "") {
+  return jid.endsWith("@s.whatsapp.net") || jid.endsWith("@lid");
 }

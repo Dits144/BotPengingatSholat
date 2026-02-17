@@ -9,7 +9,7 @@ import { handleOwnerCommand } from "./commands/owner.js";
 import { handleUserCommand } from "./commands/user.js";
 import { handlePrayerResponse, scheduleDailyReminders } from "./services/reminder.js";
 import { getActiveRentals } from "./services/storage.js";
-import { getMessageText, getRemoteJid } from "./utils/message.js";
+import { getMessageText, getRemoteJid, isPrivateChatJid, normalizeUserJid } from "./utils/message.js";
 
 let isStarting = false;
 
@@ -63,11 +63,6 @@ async function startBot() {
 
       console.log(`[INCOMING] type=${type} jid=${remoteJid} text="${text}"`);
 
-      if (type && type !== "notify") {
-        console.log(`[INCOMING] skip type=${type} jid=${remoteJid}`);
-        return;
-      }
-
       if (!remoteJid || remoteJid === "status@broadcast") {
         console.log(`[INCOMING] skip non-chat jid=${remoteJid}`);
         return;
@@ -78,15 +73,21 @@ async function startBot() {
         return;
       }
 
-      if (remoteJid.endsWith("@s.whatsapp.net")) {
+      if (isPrivateChatJid(remoteJid)) {
         const normalizedText = text.toLowerCase();
+        const userJid = normalizeUserJid(remoteJid);
 
         if (normalizedText === "sudah" || normalizedText === "belum") {
-          await handlePrayerResponse({ userId: remoteJid, message: normalizedText, client });
+          await handlePrayerResponse({ userId: userJid, message: normalizedText, client });
           return;
         }
 
-        await handleUserCommand({ message, client });
+        const normalizedMessage = {
+          ...message,
+          key: { ...(message.key || {}), remoteJid: userJid }
+        };
+
+        await handleUserCommand({ message: normalizedMessage, client });
       }
     });
 
