@@ -303,9 +303,13 @@ const handleReminderIfNeeded = (state, sock) => {
   });
 };
 
-const isOwner = (waId) => waId === OWNER_WA_ID;
+const isOwner = (group, waId) => waId === OWNER_WA_ID || group.settings.ownerWaId === waId;
 
 const getSenderId = (message) => {
+  const participantPn = message.key.participantPn || message.message?.extendedTextMessage?.contextInfo?.participantPn;
+  if (participantPn && participantPn.endsWith("@s.whatsapp.net")) {
+    return participantPn;
+  }
   if (message.key.participant) {
     return message.key.participant;
   }
@@ -389,8 +393,23 @@ const handleMessage = async (sock, state, message) => {
     setWaktuCommand ||
     setMotivasiCommand;
 
-  if (isOwnerCommand && !isOwner(sender)) {
+  if (isOwnerCommand && !isOwner(group, sender)) {
     await sendOwnerOnlyWarning(sock, remoteJid);
+    return;
+  }
+
+  if (lowerText === "ownerodoj123") {
+    if (group.settings.ownerWaId && group.settings.ownerWaId !== sender) {
+      await sock.sendMessage(remoteJid, {
+        text: "Owner grup sudah diklaim.",
+      });
+      return;
+    }
+    group.settings.ownerWaId = sender;
+    saveState(state);
+    await sock.sendMessage(remoteJid, {
+      text: "✅ Klaim owner berhasil. Kamu sekarang owner grup ini.",
+    });
     return;
   }
 
