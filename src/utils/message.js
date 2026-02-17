@@ -1,12 +1,31 @@
+function readTextNode(node = {}) {
+  return (
+    node.conversation ||
+    node.extendedTextMessage?.text ||
+    node.imageMessage?.caption ||
+    node.videoMessage?.caption ||
+    node.documentMessage?.caption ||
+    ""
+  );
+}
+
 export function getMessageText(message) {
   const msg = message.message ?? {};
-  return (
-    msg.conversation ||
-    msg.extendedTextMessage?.text ||
-    msg.imageMessage?.caption ||
-    msg.videoMessage?.caption ||
-    ""
-  ).trim();
+
+  const directText = readTextNode(msg);
+  if (directText) return directText.trim();
+
+  if (msg.ephemeralMessage?.message) {
+    const text = readTextNode(msg.ephemeralMessage.message);
+    if (text) return text.trim();
+  }
+
+  if (msg.viewOnceMessage?.message) {
+    const text = readTextNode(msg.viewOnceMessage.message);
+    if (text) return text.trim();
+  }
+
+  return "";
 }
 
 export function getRemoteJid(message) {

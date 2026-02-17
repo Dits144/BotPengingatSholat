@@ -54,22 +54,35 @@ async function startBot() {
       }
     });
 
-    client.ev.on("messages.upsert", async ({ messages }) => {
+    client.ev.on("messages.upsert", async ({ messages, type }) => {
       const message = messages?.[0];
       if (!message?.message || message.key.fromMe) return;
 
       const remoteJid = getRemoteJid(message);
+      const text = (getMessageText(message) || "").trim();
+
+      console.log(`[INCOMING] type=${type} jid=${remoteJid} text="${text}"`);
+
+      if (type && type !== "notify") {
+        console.log(`[INCOMING] skip type=${type} jid=${remoteJid}`);
+        return;
+      }
+
+      if (!remoteJid || remoteJid === "status@broadcast") {
+        console.log(`[INCOMING] skip non-chat jid=${remoteJid}`);
+        return;
+      }
 
       if (remoteJid === OWNER_GROUP_ID) {
         await handleOwnerCommand({ message, client });
         return;
       }
 
-      if (remoteJid?.endsWith("@s.whatsapp.net")) {
-        const text = (getMessageText(message) || "").trim().toLowerCase();
+      if (remoteJid.endsWith("@s.whatsapp.net")) {
+        const normalizedText = text.toLowerCase();
 
-        if (text === "sudah" || text === "belum") {
-          await handlePrayerResponse({ userId: remoteJid, message: text, client });
+        if (normalizedText === "sudah" || normalizedText === "belum") {
+          await handlePrayerResponse({ userId: remoteJid, message: normalizedText, client });
           return;
         }
 
