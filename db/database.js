@@ -38,6 +38,33 @@ CREATE TABLE IF NOT EXISTS bot_owners (
   user_jid TEXT,
   claimed_at TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS participants (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  group_id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  data TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  deleted_at TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_participants_group_created
+ON participants(group_id, created_at ASC);
+
+CREATE TABLE IF NOT EXISTS custom_commands (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  group_id TEXT NOT NULL,
+  keyword TEXT NOT NULL,
+  response TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  deleted_at TEXT
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_custom_commands_unique
+ON custom_commands(group_id, keyword);
+
 `);
 
 function nowWibIso() {

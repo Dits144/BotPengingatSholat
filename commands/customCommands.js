@@ -1,0 +1,112 @@
+const { DateTime } = require('luxon');
+const { db } = require('../db/database');
+const { TIMEZONE } = require('../config');
+
+function nowIso() {
+  return DateTime.now().setZone(TIMEZONE).toISO();
+}
+
+function normalizeKeyword(keyword = '') {
+  return keyword.trim().toUpperCase();
+}
+
+function handleSaveCommand(ctx, canManage) {
+  const raw = ctx.text.trim();
+  if (!/^command\s+/i.test(raw)) return null;
+  if (!canManage) return '⛔ Hanya admin grup atau owner bot yang boleh command.';
+
+  const body = raw.replace(/^command\s+/i, '');
+  const at = body.indexOf('@');
+  if (at <= 0 || at === body.length - 1) return 'Format salah. Contoh: command RAB@RAB OT Papandayan Dst';
+
+  const keyword = normalizeKeyword(body.slice(0, at));
+  const response = body.slice(at + 1).trim();
+
+  if (!keyword) return 'Keyword wajib diisi.';
+  if (keyword.length > 20) return 'Keyword maksimal 20 karakter.';
+  if (!response) return 'Output/response wajib diisi.';
+
+  const existing = db.prepare('SELECT id FROM custom_commands WHERE group_id=? AND keyword=?').get(ctx.groupId, keyword);
+  const now = nowIso();
+  if (existing) {
+    db.prepare(`
+      UPDATE custom_commands
+      SET response=?, updated_at=?, deleted_at=NULL
+      WHERE id=?
+    `).run(response, now, existing.id);
+  } else {
+    db.prepare(`
+      INSERT INTO custom_commands (group_id, keyword, response, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?)
+    `).run(ctx.groupId, keyword, response, now, now);
+  }
+
+  return `✅ Command "${keyword}" disimpan`;
+}
+
+function handleListCommand(ctx) {
+  if (!/^listcommand$/i.test(ctx.text.trim())) return null;
+  const rows = db.prepare(`
+    SELECT keyword FROM custom_commands
+    WHERE group_id=? AND deleted_at IS NULL
+    ORDER BY keyword ASC
+  `).all(ctx.groupId);
+
+  if (!rows.length) return '📌 LIST COMMAND\n- Belum ada command custom.';
+  const lines = rows.map((r, i) => `${i + 1}) ${r.keyword}`);
+  return ['📌 LIST COMMAND', ...lines].join('\n');
+}
+
+function handleDeleteCommand(ctx, canManage) {
+  const m = ctx.text.trim().match(/^delcommand\s+(.+)$/i);
+  if (!m) return null;
+  if (!canManage) return '⛔ Hanya admin grup atau owner bot yang boleh delcommand.';
+
+  const keyword = normalizeKeyword(m[1]);
+  if (!keyword) return 'Keyword wajib diisi.';
+
+  const res = db.prepare(`
+    UPDATE custom_commands
+    SET deleted_at=?, updated_at=?
+    WHERE group_id=? AND keyword=? AND deleted_at IS NULL
+  `).run(nowIso(), nowIso(), ctx.groupId, keyword);
+
+  if (!res.changes) return `Command "${keyword}" tidak ditemukan.`;
+  return `🗑️ Command "${keyword}" dihapus`;
+}
+
+function handleDetailCommand(ctx) {
+  const m = ctx.text.trim().match(/^detailcommand\s+(.+)$/i);
+  if (!m) return null;
+
+  const keyword = normalizeKeyword(m[1]);
+  if (!keyword) return 'Keyword wajib diisi.';
+
+  const row = db.prepare(`
+    SELECT response FROM custom_commands
+    WHERE group_id=? AND keyword=? AND deleted_at IS NULL
+  `).get(ctx.groupId, keyword);
+
+  if (!row) return `Command "${keyword}" tidak ditemukan.`;
+  return `📌 DETAIL COMMAND ${keyword}\n${row.response}`;
+}
+
+function handleAutoResponse(ctx) {
+  const keyword = normalizeKeyword(ctx.text);
+  if (!keyword) return null;
+
+  const row = db.prepare(`
+    SELECT response FROM custom_commands
+    WHERE group_id=? AND keyword=? AND deleted_at IS NULL
+  `).get(ctx.groupId, keyword);
+
+  return row ? row.response : null;
+}
+
+module.exports = {
+  handleSaveCommand,
+  handleListCommand,
+  handleDeleteCommand,
+  handleDetailCommand,
+  handleAutoResponse
+};

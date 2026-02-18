@@ -7,6 +7,8 @@ const { normalizeJid, extractUserNumber, getSenderJid, isOwner } = require('./ut
 const { menuText } = require('./commands/help');
 const { handleCalc } = require('./commands/calc');
 const finance = require('./commands/finance');
+const participants = require('./commands/participants');
+const customCommands = require('./commands/customCommands');
 const { handleOwnerCommand } = require('./commands/owner');
 const { infoGroup } = require('./commands/info');
 const { isRentalActive, lockedMessage, shouldWarnExpiring } = require('./commands/rental');
@@ -18,12 +20,11 @@ function getText(msg) {
   return c?.conversation || c?.extendedTextMessage?.text || c?.imageMessage?.caption || c?.videoMessage?.caption || '';
 }
 
-function isAdmin(participants, senderId) {
+function isAdmin(participantsMeta, senderId) {
   const sender = normalizeJid(senderId);
-  const p = participants.find((x) => normalizeJid(x.id) === sender);
+  const p = participantsMeta.find((x) => normalizeJid(x.id) === sender);
   return Boolean(p?.admin);
 }
-
 
 function isSenderOwner(senderJid) {
   const dynamicOwnerNumbers = getOwnerNumbers();
@@ -94,9 +95,7 @@ async function start() {
 
         addOwner(senderNumber, senderId);
         await sock.sendMessage(groupId, {
-          text: `✅ Owner berhasil diklaim.
-Nomor: ${senderNumber}
-Sekarang kamu bisa pakai command owner (#).`
+          text: `✅ Owner berhasil diklaim.\nNomor: ${senderNumber}\nSekarang kamu bisa pakai command owner (#).`
         }, { quoted: msg });
         return;
       }
@@ -133,6 +132,71 @@ Sekarang kamu bisa pakai command owner (#).`
         return;
       }
 
+      const senderIsOwner = isSenderOwner(senderId);
+      const needsAdminCheck = /^(addpeserta\s+|delpeserta\s+no\s+\d+|updatepeserta\s+no\s+\d+|command\s+|delcommand\s+)/i.test(text);
+      let senderIsAdmin = false;
+      if (isGroupMessage && needsAdminCheck && !senderIsOwner) {
+        const meta = await sock.groupMetadata(groupId);
+        senderIsAdmin = isAdmin(meta.participants, senderId);
+      }
+      const canManage = senderIsOwner || senderIsAdmin;
+
+      const participantCtx = { text, groupId, senderId, senderName };
+
+      const listPeserta = participants.handleListPeserta(participantCtx);
+      if (listPeserta) {
+        await sock.sendMessage(groupId, { text: listPeserta }, { quoted: msg });
+        return;
+      }
+
+      const addPeserta = participants.handleAddPeserta(participantCtx, canManage);
+      if (addPeserta) {
+        await sock.sendMessage(groupId, { text: addPeserta }, { quoted: msg });
+        return;
+      }
+
+      const delPeserta = participants.handleDeletePeserta(participantCtx, canManage);
+      if (delPeserta) {
+        await sock.sendMessage(groupId, { text: delPeserta }, { quoted: msg });
+        return;
+      }
+
+      const updPeserta = participants.handleUpdatePeserta(participantCtx, canManage);
+      if (updPeserta) {
+        await sock.sendMessage(groupId, { text: updPeserta }, { quoted: msg });
+        return;
+      }
+
+      const detailPeserta = participants.handleNumericDetail(participantCtx);
+      if (detailPeserta) {
+        await sock.sendMessage(groupId, { text: detailPeserta }, { quoted: msg });
+        return;
+      }
+
+      const saveCommand = customCommands.handleSaveCommand(participantCtx, canManage);
+      if (saveCommand) {
+        await sock.sendMessage(groupId, { text: saveCommand }, { quoted: msg });
+        return;
+      }
+
+      const listCommand = customCommands.handleListCommand(participantCtx);
+      if (listCommand) {
+        await sock.sendMessage(groupId, { text: listCommand }, { quoted: msg });
+        return;
+      }
+
+      const detailCommand = customCommands.handleDetailCommand(participantCtx);
+      if (detailCommand) {
+        await sock.sendMessage(groupId, { text: detailCommand }, { quoted: msg });
+        return;
+      }
+
+      const delCommand = customCommands.handleDeleteCommand(participantCtx, canManage);
+      if (delCommand) {
+        await sock.sendMessage(groupId, { text: delCommand }, { quoted: msg });
+        return;
+      }
+
       const isFinanceCommand = /^([+-]|riwayat|edit\s+\d+|hapus\s+\d+|detail\s+\d+|saldo(\s|$))/i.test(text);
       if (isFinanceCommand && isGroupMessage && !isRentalActive(groupId)) {
         await sock.sendMessage(groupId, { text: lockedMessage() }, { quoted: msg });
@@ -164,13 +228,13 @@ Sekarang kamu bisa pakai command owner (#).`
         admin = isAdmin(meta.participants, senderId);
       }
 
-      const edit = await finance.edit(ctx, admin);
+      const edit = await finance.edit(ctx, admin || senderIsOwner);
       if (edit) {
         await sock.sendMessage(groupId, { text: edit }, { quoted: msg });
         return;
       }
 
-      const del = await finance.remove(ctx, admin);
+      const del = await finance.remove(ctx, admin || senderIsOwner);
       if (del) {
         await sock.sendMessage(groupId, { text: del }, { quoted: msg });
         return;
@@ -185,6 +249,12 @@ Sekarang kamu bisa pakai command owner (#).`
       const tx = await finance.recordTransaction(ctx);
       if (tx) {
         await sock.sendMessage(groupId, { text: tx }, { quoted: msg });
+        return;
+      }
+
+      const autoResp = isGroupMessage ? customCommands.handleAutoResponse(ctx) : null;
+      if (autoResp) {
+        await sock.sendMessage(groupId, { text: autoResp }, { quoted: msg });
         return;
       }
 

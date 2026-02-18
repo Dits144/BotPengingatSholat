@@ -13,17 +13,28 @@ function menuText() {
     'hapus 3 | detail 1',
     'saldo | saldo hari ini | saldo bulan ini',
     '',
+    '*Peserta Opentrip:*',
+    'listpeserta | listpeserta 2',
+    'ketik angka (contoh: 4) untuk detail peserta dari list terakhir',
+    'addpeserta Nama@(Data diri)',
+    'updatepeserta no 4@(Data baru)',
+    'delpeserta no 4',
+    '',
+    '*Custom Command:*',
+    'command KEYWORD@Output',
+    'listcommand | detailcommand KEYWORD | delcommand KEYWORD',
+    '',
     '*Kalkulator:*',
-    'tambah 100 50',
-    'kurang 100 20',
-    'kali 10 5',
-    'bagi 10 4',
+    'tambah 100 50 | kurang 100 20 | kali 10 5 | bagi 10 4',
     '',
     '*Owner command (#):*',
     '#infogroup [idgrup]',
     '#aktif idgrup hari',
     '#nonaktif idgrup',
-    '#statussewa'
+    '#statussewa',
+    '',
+    '*Klaim Owner Cepat:*',
+    'Ditsanalah144'
   ].join('\n');
 }
 
