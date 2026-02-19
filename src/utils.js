@@ -31,4 +31,15 @@ function safeText(t = '') {
   return String(t).trim();
 }
 
-module.exports = { toDateKey, nowMs, addDaysMs, normalizePrayerName, safeText };
+function normalizeJid(input) {
+  const raw = String(input || '').trim();
+  if (!raw) return '';
+  if (raw.endsWith('@s.whatsapp.net')) return raw;
+  if (raw.endsWith('@c.us')) return raw.replace('@c.us', '@s.whatsapp.net');
+  if (raw.includes('@')) return raw;
+  const digits = raw.replace(/[^\d]/g, '');
+  if (!digits) return '';
+  return `${digits}@s.whatsapp.net`;
+}
+
+module.exports = { toDateKey, nowMs, addDaysMs, normalizePrayerName, safeText, normalizeJid };

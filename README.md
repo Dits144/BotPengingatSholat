@@ -7,7 +7,10 @@ npm install
 ```
 
 ## 2) Setup ENV
-Copy `.env.example` jadi `.env` lalu isi `OWNER_JID` dan `OWNER_GROUP_JID`.
+Copy `.env.example` jadi `.env` lalu isi minimal `OWNER_GROUP_JID`.
+`OWNER_JID` opsional.
+
+`REMINDER_TEXT` sekarang otomatis support newline asli dari `\n`.
 
 ## 3) Jalankan Bot
 ```powershell
@@ -19,12 +22,13 @@ npm start
 - Scan QR yang muncul di terminal.
 
 ## Owner Commands (di group owner)
-
-> Catatan: command owner sekarang divalidasi dari `OWNER_GROUP_JID` (group pengelola). Jadi tidak tergantung OWNER_JID.
 - `addsewa 628xxxx@c.us 5`
 - `nonaktifsewa 628xxxx@c.us`
 - `listsewa`
-- `help`
+- `helpsholat`
+
+Saat `addsewa` berhasil, bot otomatis kirim notif ke user:
+`✅ Bot sholat kamu sudah aktif...`
 
 ## User Commands (private chat)
 - `waktusholat`
@@ -35,7 +39,10 @@ npm start
 - `doa`
 - `sudah isya / sudah subuh / sudah dzuhur / sudah ashar / sudah maghrib`
 - `belum`
-- `help`
+- `helpsholat`
+
+Jika user salah ketik command, bot akan membalas:
+`Perintah tidak dikenali. Ketik helpsholat untuk melihat command.`
 
 ---
 
@@ -50,7 +57,7 @@ cd C:\xampp\htdocs\BotSholat
 npm install
 ```
 
-3. Buat `.env` dari `.env.example`, isi owner.
+3. Buat `.env` dari `.env.example`, isi owner/group.
 
 4. Start:
 ```powershell
