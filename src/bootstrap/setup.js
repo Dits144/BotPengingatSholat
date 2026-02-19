@@ -1,13 +1,17 @@
 const fs = require('fs');
 
-function runInitialSetup() {
-  const folders = ['data', 'cache', 'auth', 'logs'];
-  for (const folder of folders) {
-    if (!fs.existsSync(folder)) {
-      fs.mkdirSync(folder, { recursive: true });
-      console.log(`[setup] Membuat folder: ${folder}`);
-    }
+function ensureDir(path) {
+  if (!fs.existsSync(path)) {
+    fs.mkdirSync(path, { recursive: true });
+    console.log(`[setup] Folder dibuat: ${path}`);
   }
+}
+
+function runInitialSetup() {
+  ensureDir('data');
+  ensureDir('cache');
+  ensureDir('auth');
+  ensureDir('logs');
   console.log('[setup] Initial setup selesai.');
 }
 

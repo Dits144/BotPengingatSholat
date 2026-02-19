@@ -1,22 +1,16 @@
-# WhatsApp Bot Pengingat Sholat (JavaScript + Baileys)
+# Bot Pengingat Sholat WhatsApp (JavaScript)
 
-Bot WhatsApp berbasis **Node.js JavaScript** (tanpa TypeScript) dengan fitur:
-- Pengingat sholat otomatis.
-- Sistem sewa user.
-- Tracking ibadah harian.
-- Rekap bulanan.
-- Jadwal sholat dinamis dari Aladhan API.
+Project ini sudah dirombak total ke **JavaScript CommonJS** dan **build script lintas OS** (Windows/Linux/Mac).
 
-## Stack
-- Node.js (JavaScript CommonJS)
-- `@whiskeysockets/baileys`
-- SQLite (`better-sqlite3`)
-- `node-cron`
-- `axios`
+## Kenapa sekarang tidak error `rm is not recognized`?
+Karena build **tidak** pakai command shell `rm/cp` lagi.
+Build sekarang pakai Node script: `node scripts/build.js`.
 
-## Struktur Folder
+## Struktur Project
 
 ```txt
+scripts/
+  build.js
 src/
   bootstrap/setup.js
   config/env.js
@@ -32,31 +26,38 @@ src/
     formatter.js
     jid.js
   index.js
-```
-
-Setelah build:
-
-```txt
 dist/
-  ...copy dari src...
-  index.js
+  ...hasil build dari src...
 ```
 
-## Install & Jalankan
+## Install
 
 ```bash
 npm install
 cp .env.example .env
-npm run build
+```
+
+Windows PowerShell:
+```powershell
+copy .env.example .env
+```
+
+## Jalankan
+
+```bash
 npm start
 ```
 
-> `npm start` otomatis menjalankan `prestart` (`npm run build`) supaya `dist/index.js` selalu ada.
+`npm start` akan otomatis:
+1. build dulu (`prestart`)
+2. jalankan `node dist/index.js`
 
-## Development
+## Perintah penting
 
 ```bash
+npm run build
 npm run dev
+npm start
 ```
 
 ## Deploy VPS
@@ -67,8 +68,11 @@ npm run build
 npm start
 ```
 
-Atau pakai PM2:
-
+PM2:
 ```bash
 pm2 start dist/index.js --name bot-sholat
 ```
+
+## Catatan
+- Jika login pertama, QR akan tampil di terminal.
+- Folder `data`, `cache`, `auth`, `logs` dibuat otomatis saat startup.
