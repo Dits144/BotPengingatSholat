@@ -136,3 +136,14 @@ Bot akan ambil jadwal baru otomatis setiap hari (dan bisa dipanggil manual lewat
   - Group owner (`OWNER_GROUP_ID`) untuk command owner.
 - Jika sewa habis, bot berhenti kirim reminder dan kirim notifikasi masa sewa habis.
 - Jika user tidak menjawab sampai jadwal sholat berikutnya, status sebelumnya otomatis `❌`.
+
+## 11) Build & Start Otomatis Saat Deploy
+
+Jalankan urutan berikut:
+```bash
+npm install
+npm run build
+npm start
+```
+
+`npm start` juga menjalankan `prestart` untuk build otomatis agar `dist/index.js` selalu tersedia.

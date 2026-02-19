@@ -1,16 +1,15 @@
-import makeWASocket, { DisconnectReason, useMultiFileAuthState, fetchLatestBaileysVersion } from 'baileys';
+import makeWASocket, { DisconnectReason, fetchLatestBaileysVersion, useMultiFileAuthState } from '@whiskeysockets/baileys';
 import pino from 'pino';
-import { initDb } from './db/database';
-import { startScheduler } from './scheduler/scheduler';
-import { handleCommand } from './handlers/commandHandler';
+import { runInitialSetup } from './bootstrap/setup';
 import { env } from './config/env';
+import { initDb } from './db/database';
+import { handleCommand } from './handlers/commandHandler';
+import { startScheduler } from './scheduler/scheduler';
 import { isPrivateJid } from './utils/jid';
 
 const logger = pino({ level: 'info' });
 
-async function startBot() {
-  initDb();
-
+async function connectWhatsApp() {
   const { state, saveCreds } = await useMultiFileAuthState('auth');
   const { version } = await fetchLatestBaileysVersion();
 
@@ -27,22 +26,27 @@ async function startBot() {
     const { connection, lastDisconnect } = update;
 
     if (update.qr) {
-      console.log('\nScan QR ini untuk login WhatsApp:\n');
+      console.log('\n[whatsapp] Scan QR terbaru di terminal untuk login.\n');
+    }
+
+    if (connection === 'open') {
+      console.log('[whatsapp] ✅ Koneksi berhasil dibuka.');
+      startScheduler(sock);
+      await sock.sendMessage(env.ownerGroupId, { text: `✅ ${env.botName} aktif dan siap bertugas.` });
     }
 
     if (connection === 'close') {
       const statusCode = (lastDisconnect?.error as any)?.output?.statusCode;
       const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
-      console.error('Connection closed. Reconnect:', shouldReconnect);
-      if (shouldReconnect) {
-        setTimeout(startBot, 1500);
-      }
-    }
+      console.error(`[whatsapp] Koneksi tertutup. reconnect=${shouldReconnect}`);
 
-    if (connection === 'open') {
-      console.log('✅ Bot WhatsApp terkoneksi.');
-      startScheduler(sock);
-      await sock.sendMessage(env.ownerGroupId, { text: `✅ ${env.botName} aktif dan siap bertugas.` });
+      if (shouldReconnect) {
+        setTimeout(() => {
+          void startBot();
+        }, 2000);
+      } else {
+        console.error('[whatsapp] Session logout. Hapus folder auth lalu scan ulang QR.');
+      }
     }
   });
 
@@ -51,6 +55,7 @@ async function startBot() {
 
     for (const msg of messages) {
       if (!msg.message || msg.key.fromMe) continue;
+
       const chatId = msg.key.remoteJid;
       if (!chatId) continue;
 
@@ -64,14 +69,26 @@ async function startBot() {
       try {
         await handleCommand(sock, sender, chatId, text);
       } catch (error) {
-        console.error('[message-handler]', error);
+        console.error('[message-handler] Error:', error);
         await sock.sendMessage(chatId, { text: 'Maaf, terjadi error. Coba lagi sebentar.' });
       }
     }
   });
 }
 
-startBot().catch((error) => {
-  console.error('Fatal error', error);
-  process.exit(1);
-});
+async function startBot() {
+  try {
+    console.log('[startup] Starting WhatsApp Bot...');
+    runInitialSetup();
+    initDb();
+    console.log('[startup] Database siap.');
+    await connectWhatsApp();
+  } catch (err) {
+    console.error('[startup] Startup error:', err);
+    setTimeout(() => {
+      void startBot();
+    }, 3000);
+  }
+}
+
+void startBot();
