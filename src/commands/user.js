@@ -42,7 +42,12 @@ export async function handleUserCommand({ message, client }) {
       }
 
       const report = hasAnyData ? formatDailyReport(log) : "Belum ada catatan hari ini.";
-      await sendWithDebug(client, userId, `📋 Rekap Sholat Hari Ini\n\n${report}`, "listsholat");
+      await sendWithDebug(
+        client,
+        userId,
+        `📋 Rekap Sholat Hari Ini\n\n${report}\n\nKeterangan: ✅ sudah | ❌ terlewat | ⏳ menunggu`,
+        "listsholat"
+      );
       return;
     }
 

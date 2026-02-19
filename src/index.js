@@ -8,7 +8,7 @@ import { DEFAULT_CITY, OWNER_GROUP_ID } from "./config.js";
 import { handleOwnerCommand } from "./commands/owner.js";
 import { handleUserCommand } from "./commands/user.js";
 import { handlePrayerResponse, parsePrayerResponse, scheduleDailyReminders } from "./services/reminder.js";
-import { getActiveRentals } from "./services/storage.js";
+import { getActiveRentals, resolveUserJid } from "./services/storage.js";
 import { getMessageText, getRemoteJid, isPrivateChatJid, normalizeUserJid } from "./utils/message.js";
 
 process.on("unhandledRejection", (reason) => {
@@ -82,7 +82,7 @@ async function startBot() {
         }
 
         if (isPrivateChatJid(remoteJid)) {
-          const userJid = normalizeUserJid(remoteJid);
+          const userJid = await resolveUserJid(normalizeUserJid(remoteJid));
           const low = text.toLowerCase();
 
           if (parsePrayerResponse(low)) {
