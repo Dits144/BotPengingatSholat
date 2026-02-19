@@ -11,6 +11,14 @@ import { handlePrayerResponse, parsePrayerResponse, scheduleDailyReminders } fro
 import { getActiveRentals } from "./services/storage.js";
 import { getMessageText, getRemoteJid, isPrivateChatJid, normalizeUserJid } from "./utils/message.js";
 
+process.on("unhandledRejection", (reason) => {
+  console.error("❌ UNHANDLED REJECTION:", reason);
+});
+
+process.on("uncaughtException", (err) => {
+  console.error("❌ UNCAUGHT EXCEPTION:", err);
+});
+
 let isStarting = false;
 
 async function startBot() {
@@ -41,7 +49,7 @@ async function startBot() {
         const statusCode = lastDisconnect?.error?.output?.statusCode;
         const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
 
-        console.log("⚠️ Connection closed. status =", statusCode, "reconnect =", shouldReconnect);
+        console.log("⚠️ close", statusCode, "reconnect", shouldReconnect);
 
         if (shouldReconnect) {
           setTimeout(() => {
@@ -55,39 +63,42 @@ async function startBot() {
     });
 
     client.ev.on("messages.upsert", async ({ messages, type }) => {
-      const message = messages?.[0];
-      if (!message?.message || message.key.fromMe) return;
+      try {
+        const message = messages?.[0];
+        if (!message?.message) return;
 
-      const remoteJid = getRemoteJid(message);
-      const text = (getMessageText(message) || "").trim();
+        const remoteJid = getRemoteJid(message);
+        const text = (getMessageText(message) || "").trim();
 
-      console.log(`[INCOMING] type=${type} jid=${remoteJid} text="${text}"`);
+        console.log(`[IN] type=${type} jid=${remoteJid} text="${text}"`);
 
-      if (!remoteJid || remoteJid === "status@broadcast") {
-        console.log(`[INCOMING] skip non-chat jid=${remoteJid}`);
-        return;
-      }
+        if (message.key?.fromMe) return;
 
-      if (remoteJid === OWNER_GROUP_ID) {
-        await handleOwnerCommand({ message, client });
-        return;
-      }
+        if (!remoteJid || remoteJid === "status@broadcast") return;
 
-      if (isPrivateChatJid(remoteJid)) {
-        const normalizedText = text.toLowerCase();
-        const userJid = normalizeUserJid(remoteJid);
-
-        if (parsePrayerResponse(normalizedText)) {
-          await handlePrayerResponse({ userId: userJid, message: normalizedText, client });
+        if (remoteJid === OWNER_GROUP_ID) {
+          await handleOwnerCommand({ message, client });
           return;
         }
 
-        const normalizedMessage = {
-          ...message,
-          key: { ...(message.key || {}), remoteJid: userJid }
-        };
+        if (isPrivateChatJid(remoteJid)) {
+          const userJid = normalizeUserJid(remoteJid);
+          const low = text.toLowerCase();
 
-        await handleUserCommand({ message: normalizedMessage, client });
+          if (parsePrayerResponse(low)) {
+            await handlePrayerResponse({ userId: userJid, message: low, client });
+            return;
+          }
+
+          const normalizedMessage = {
+            ...message,
+            key: { ...(message.key || {}), remoteJid: userJid }
+          };
+
+          await handleUserCommand({ message: normalizedMessage, client });
+        }
+      } catch (err) {
+        console.error("❌ messages.upsert ERROR:", err);
       }
     });
 

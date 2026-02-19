@@ -1,35 +1,29 @@
-function readTextNode(node = {}) {
-  return (
-    node.conversation ||
-    node.extendedTextMessage?.text ||
-    node.imageMessage?.caption ||
-    node.videoMessage?.caption ||
-    node.documentMessage?.caption ||
-    ""
-  );
+export function getRemoteJid(message) {
+  return message?.key?.remoteJid || message?.remoteJid || "";
 }
 
 export function getMessageText(message) {
-  const msg = message.message ?? {};
+  const m = message?.message;
+  if (!m) return "";
 
-  const directText = readTextNode(msg);
-  if (directText) return directText.trim();
+  if (m.conversation) return m.conversation;
+  if (m.extendedTextMessage?.text) return m.extendedTextMessage.text;
 
-  if (msg.ephemeralMessage?.message) {
-    const text = readTextNode(msg.ephemeralMessage.message);
-    if (text) return text.trim();
+  if (m.imageMessage?.caption) return m.imageMessage.caption;
+  if (m.videoMessage?.caption) return m.videoMessage.caption;
+
+  if (m.buttonsResponseMessage?.selectedButtonId) return m.buttonsResponseMessage.selectedButtonId;
+  if (m.listResponseMessage?.singleSelectReply?.selectedRowId) return m.listResponseMessage.singleSelectReply.selectedRowId;
+
+  if (m.ephemeralMessage?.message) {
+    return getMessageText({ message: m.ephemeralMessage.message });
   }
 
-  if (msg.viewOnceMessage?.message) {
-    const text = readTextNode(msg.viewOnceMessage.message);
-    if (text) return text.trim();
+  if (m.viewOnceMessage?.message) {
+    return getMessageText({ message: m.viewOnceMessage.message });
   }
 
   return "";
-}
-
-export function getRemoteJid(message) {
-  return message.key?.remoteJid || message.remoteJid || "";
 }
 
 export function normalizeUserJid(jid) {

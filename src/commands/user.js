@@ -61,7 +61,7 @@ export async function handleUserCommand({ message, client }) {
       return;
     }
 
-    if (command === "tescall") {
+    if (command === "tescall" || command === "tesnotif") {
       const result = await runTestCall({ client, userId });
       await sendWithDebug(client, userId, result.message, "tescall");
       return;
@@ -82,7 +82,7 @@ export async function handleUserCommand({ message, client }) {
       return;
     }
 
-    await sendWithDebug(client, userId, "🤖 Perintah belum dikenali.\nGunakan: listsholat, waktusholat, rekap bulan, tescall", "unknown");
+    await sendWithDebug(client, userId, "🤖 Perintah belum dikenali.\nGunakan: listsholat, waktusholat, rekap bulan, tescall/tesnotif", "unknown");
   } catch (error) {
     console.error(`[CMD ERROR] jid=${userId} command="${command}":`, error?.message ?? error);
     await sendWithDebug(client, userId, "⚠️ Terjadi kendala memproses perintah. Coba lagi ya.", "error");
