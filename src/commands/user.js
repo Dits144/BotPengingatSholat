@@ -1,7 +1,7 @@
 import dayjs from "dayjs";
 import { DEFAULT_CITY } from "../config.js";
 import { formatSchedule, getDateKey, getMonthKey, getPrayerSchedule } from "../services/prayerTimes.js";
-import { formatDailyReport, formatMonthlyReport } from "../services/reminder.js";
+import { formatDailyReport, formatMonthlyReport, runTestCall } from "../services/reminder.js";
 import { getMonthlyLogs, getPrayerLog, getRental } from "../services/storage.js";
 import { getMessageText, getRemoteJid } from "../utils/message.js";
 
@@ -26,37 +26,23 @@ export async function handleUserCommand({ message, client }) {
   const command = normalizeCommand(rawText);
 
   console.log(`[CMD] jid=${userId} text="${rawText}" command="${command}"`);
-
-  if (!command) {
-    console.log(`[CMD] skip empty text jid=${userId}`);
-    return;
-  }
+  if (!command) return;
 
   try {
     const rental = await getRental(userId);
     const isActive = rental?.status === "aktif";
 
-    if (command === "list") {
+    if (["listsholat", "list sholat"].includes(command)) {
       const log = await getPrayerLog(userId, getDateKey());
       const hasAnyData = log && Object.keys(log).length > 0;
 
       if (!isActive) {
-        await sendWithDebug(
-          client,
-          userId,
-          "📋 Rekap Sholat Hari Ini\nBelum ada catatan hari ini.\nKetik: waktusholat untuk lihat jadwal.\n\nℹ️ Status sewa kamu belum aktif, hubungi owner ya.",
-          "list"
-        );
+        await sendWithDebug(client, userId, "⛔ Masa sewa kamu tidak aktif. Hubungi owner.", "listsholat");
         return;
       }
 
-      const report = hasAnyData ? formatDailyReport(log) : "Belum ada catatan hari ini.\nKetik: waktusholat untuk lihat jadwal.";
-      await sendWithDebug(
-        client,
-        userId,
-        `📋 Rekap Sholat Hari Ini\n\n${report}\n\nTetap semangat memperbaiki ibadah 🤍`,
-        "list"
-      );
+      const report = hasAnyData ? formatDailyReport(log) : "Belum ada catatan hari ini.";
+      await sendWithDebug(client, userId, `📋 Rekap Sholat Hari Ini\n\n${report}`, "listsholat");
       return;
     }
 
@@ -66,18 +52,18 @@ export async function handleUserCommand({ message, client }) {
         await sendWithDebug(
           client,
           userId,
-          `🕌 Jadwal Sholat Hari Ini (${DEFAULT_CITY.name})\n\n${formatSchedule(schedule)}`,
+          `🕌 Jadwal Sholat (Tajurhalang - Hari ini)\n\n${formatSchedule(schedule)}`,
           "waktusholat"
         );
       } catch (error) {
-        await sendWithDebug(
-          client,
-          userId,
-          "⚠️ Gagal ambil jadwal sholat sementara. Coba lagi 1-2 menit ya.",
-          "waktusholat"
-        );
-        console.error(`[CMD ERROR] waktusholat jid=${userId}:`, error?.message ?? error);
+        await sendWithDebug(client, userId, "⚠️ Gagal ambil jadwal sholat sementara. Coba lagi 1-2 menit ya.", "waktusholat");
       }
+      return;
+    }
+
+    if (command === "tescall") {
+      const result = await runTestCall({ client, userId });
+      await sendWithDebug(client, userId, result.message, "tescall");
       return;
     }
 
@@ -92,21 +78,11 @@ export async function handleUserCommand({ message, client }) {
       const { lines, totalMisses } = formatMonthlyReport(logs);
       const title = `📊 Rekap Sholat Bulan ${dayjs().format("MMMM")}`;
       const body = lines.length ? lines.join("\n") : "Belum ada catatan bulan ini.";
-      await sendWithDebug(
-        client,
-        userId,
-        `${title}\n\n${body}\n\nTotal bolong bulan ini: ${totalMisses} sholat\n\nYuk perbaiki pelan-pelan 🤍`,
-        "rekap bulan"
-      );
+      await sendWithDebug(client, userId, `${title}\n\n${body}\n\nTotal bolong bulan ini: ${totalMisses} sholat`, "rekap bulan");
       return;
     }
 
-    await sendWithDebug(
-      client,
-      userId,
-      "🤖 Perintah belum dikenali.\n\nGunakan:\n- list\n- waktusholat\n- rekap bulan",
-      "unknown"
-    );
+    await sendWithDebug(client, userId, "🤖 Perintah belum dikenali.\nGunakan: listsholat, waktusholat, rekap bulan, tescall", "unknown");
   } catch (error) {
     console.error(`[CMD ERROR] jid=${userId} command="${command}":`, error?.message ?? error);
     await sendWithDebug(client, userId, "⚠️ Terjadi kendala memproses perintah. Coba lagi ya.", "error");

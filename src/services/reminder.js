@@ -4,12 +4,25 @@ import utc from "dayjs/plugin/utc.js";
 import timezone from "dayjs/plugin/timezone.js";
 import { PRAYER_ORDER, REMINDER_MESSAGES } from "../config.js";
 import { getDateKey, getPrayerSchedule } from "./prayerTimes.js";
-import { getPrayerLog, getUser, setPrayerLog, upsertUser } from "./storage.js";
+import { getPrayerLog, setPrayerLog } from "./storage.js";
 
 dayjs.extend(utc);
 dayjs.extend(timezone);
 
 const scheduledTimeouts = new Map();
+const PRAYER_ALIASES = {
+  subuh: "subuh",
+  shubuh: "subuh",
+  dzuhur: "dzuhur",
+  zuhur: "dzuhur",
+  dhuhur: "dzuhur",
+  ashar: "ashar",
+  asr: "ashar",
+  magrib: "magrib",
+  maghrib: "magrib",
+  isya: "isya",
+  isha: "isya"
+};
 
 export async function scheduleDailyReminders({ client, userId, city }) {
   clearExisting(userId);
@@ -17,25 +30,29 @@ export async function scheduleDailyReminders({ client, userId, city }) {
   const schedule = await getPrayerSchedule(new Date(), city);
   const jobs = [];
 
-  jobs.push(registerJob({ jobs, when: schedule.imsak && new Date(schedule.imsak.getTime() - 10 * 60_000), task: () => sendImsakReminder({ client, userId }) }));
+  jobs.push(registerJob(schedule.imsak && new Date(schedule.imsak.getTime() - 60_000), async () => {
+    await sendImsakReminder({ client, userId });
+  }));
+
   PRAYER_ORDER.forEach((prayer) => {
-    jobs.push(registerJob({ jobs, when: schedule[prayer], task: () => onPrayerTime({ client, userId, prayer, schedule }) }));
+    jobs.push(registerJob(schedule[prayer], async () => {
+      await onPrayerTime({ client, userId, prayer, schedule });
+    }));
   });
 
-  const resetAt = dayjs().tz("Asia/Jakarta").add(1, "day").startOf("day").add(5, "minute").toDate();
-  jobs.push(registerJob({ jobs, when: resetAt, task: async () => {
+  const resetAt = dayjs().tz("Asia/Jakarta").add(1, "day").startOf("day").add(1, "minute").toDate();
+  jobs.push(registerJob(resetAt, async () => {
     await scheduleDailyReminders({ client, userId, city });
-  }}));
+  }));
 
   scheduledTimeouts.set(userId, jobs.filter(Boolean));
 }
 
-function registerJob({ jobs, when, task }) {
+function registerJob(when, task) {
   if (!when) return null;
   const delay = when.getTime() - Date.now();
   if (delay <= 0) return null;
-  const timeout = setTimeout(task, delay);
-  return timeout;
+  return setTimeout(task, delay);
 }
 
 export async function onPrayerTime({ client, userId, prayer, schedule }) {
@@ -57,73 +74,82 @@ export async function onPrayerTime({ client, userId, prayer, schedule }) {
     await setPrayerLog(userId, todayKey, log);
   }
 
-  const expiresAt = getExpiryForPrayer(prayer, schedule);
-  await upsertUser(userId, {
-    lastPrompt: {
-      prayer,
-      dateKey: todayKey,
-      expiresAt: expiresAt.toISOString()
-    }
-  });
-
-  await tryCallUser({ client, userId });
+  await tryCallWithRetry({ client, userId, prayer });
   await client.sendMessage(userId, {
-    text: `🕌 Waktu Sholat ${capitalize(prayer)} telah tiba\n\nApakah kamu sudah sholat?\n\nKetik:\n✅ sudah\n❌ belum`
+    text: `🕌 Waktu Sholat ${capitalize(prayer)} telah tiba\n\nApakah kamu sudah sholat?\n\nKetik:\n✅ sudah ${prayer}\n❌ belum ${prayer}`
   });
 }
 
 async function sendImsakReminder({ client, userId }) {
   await client.sendMessage(userId, {
-    text: "🌙 Imsak akan tiba 10 menit lagi\n\nSegera akhiri makan dan minum ya 🤍\nSemoga puasamu diterima Allah."
+    text: "🌙 1 menit lagi IMSAK.\nYuk akhiri makan/minum ya 🤍\nSemoga puasanya lancar."
   });
 }
 
-async function tryCallUser({ client, userId }) {
-  let called = false;
+export async function runTestCall({ client, userId }) {
+  const result = await tryCallWithRetry({ client, userId, prayer: "tescall" });
+  if (result.ok) {
+    return { ok: true, message: "✅ Test call terkirim. Kalau kamu menerima panggilan berarti fitur call aman." };
+  }
+  return {
+    ok: false,
+    message: `⚠️ Test call gagal: ${result.reason}. Bot akan tetap kirim pesan pengingat jika call tidak bisa.`
+  };
+}
+
+async function tryCallWithRetry({ client, userId, prayer }) {
+  console.log(`[CALL] start user=${userId} prayer=${prayer}`);
+  let firstError = null;
 
   try {
-    if (typeof client.sendNode === "function") {
-      const callId = crypto.randomUUID();
-      await client.sendNode({
-        tag: "call",
-        attrs: {
-          to: userId,
-          id: callId
-        },
-        content: [
-          {
-            tag: "offer",
-            attrs: {
-              "call-id": callId,
-              "call-creator": userId,
-              count: "0"
-            }
-          }
-        ]
-      });
-      called = true;
-
-      setTimeout(async () => {
-        try {
-          await client.sendNode({
-            tag: "call",
-            attrs: { to: userId, id: crypto.randomUUID() },
-            content: [{ tag: "terminate", attrs: { reason: "timeout" } }]
-          });
-        } catch {
-          // ignore terminate error
-        }
-      }, 3000);
-    }
-  } catch {
-    called = false;
+    await placeShortCall({ client, userId });
+    console.log(`[CALL] success user=${userId} prayer=${prayer}`);
+    return { ok: true };
+  } catch (error) {
+    firstError = error?.message ?? "unknown";
+    console.log(`[CALL] fail user=${userId} prayer=${prayer} reason=${firstError}`);
   }
 
-  if (!called) {
-    await client.sendMessage(userId, {
-      text: "📞 Panggilan pengingat belum berhasil dilakukan, jadi aku kirim pengingat lewat chat ya 🤍"
-    });
+  await sleep(10_000);
+
+  try {
+    await placeShortCall({ client, userId });
+    console.log(`[CALL] success user=${userId} prayer=${prayer} onRetry=true`);
+    return { ok: true };
+  } catch (error) {
+    const secondError = error?.message ?? "unknown";
+    console.log(`[CALL] fail user=${userId} prayer=${prayer} onRetry=true reason=${secondError}`);
+    return { ok: false, reason: secondError || firstError || "unknown" };
   }
+}
+
+async function placeShortCall({ client, userId }) {
+  if (typeof client.sendNode !== "function") {
+    throw new Error("sendNode not supported");
+  }
+
+  const callId = crypto.randomUUID();
+  await client.sendNode({
+    tag: "call",
+    attrs: { to: userId, id: callId },
+    content: [
+      {
+        tag: "offer",
+        attrs: { "call-id": callId, "call-creator": userId, count: "0" }
+      }
+    ]
+  });
+
+  await sleep(3000);
+  await client.sendNode({
+    tag: "call",
+    attrs: { to: userId, id: crypto.randomUUID() },
+    content: [{ tag: "terminate", attrs: { reason: "timeout" } }]
+  });
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 async function markMissedIfStillPending({ userId, dateKey, prayer }) {
@@ -140,53 +166,48 @@ function getPreviousPrayer(prayer) {
   return PRAYER_ORDER[index - 1];
 }
 
-function getExpiryForPrayer(prayer, schedule) {
-  const index = PRAYER_ORDER.indexOf(prayer);
-  if (index < PRAYER_ORDER.length - 1) {
-    return schedule[PRAYER_ORDER[index + 1]];
+export async function handlePrayerResponse({ userId, message, client }) {
+  const parsed = parsePrayerResponse(message);
+  if (!parsed) return false;
+
+  if (!parsed.prayer) {
+    await client.sendMessage(userId, {
+      text: "Kamu sudah sholat yang mana?\nKetik: sudah subuh / sudah dzuhur / sudah ashar / sudah magrib / sudah isya"
+    });
+    return true;
   }
-  return dayjs(schedule.subuh).add(1, "day").toDate();
+
+  const dateKey = getDateKey();
+  const log = (await getPrayerLog(userId, dateKey)) ?? {};
+
+  if (parsed.intent === "sudah") {
+    log[parsed.prayer] = "done";
+    await setPrayerLog(userId, dateKey, log);
+    await client.sendMessage(userId, { text: REMINDER_MESSAGES.success });
+    return true;
+  }
+
+  log[parsed.prayer] = "pending";
+  await setPrayerLog(userId, dateKey, log);
+  await client.sendMessage(userId, { text: REMINDER_MESSAGES.pending });
+  return true;
 }
 
-export async function resolveActivePrompt(userId) {
-  const user = await getUser(userId);
-  const prompt = user?.lastPrompt;
-  if (!prompt) return null;
+export function parsePrayerResponse(rawMessage = "") {
+  const text = rawMessage.toLowerCase().replace(/\s+/g, " ").trim();
+  if (!text) return null;
 
-  const expiry = dayjs(prompt.expiresAt);
-  if (dayjs().isAfter(expiry)) {
-    await markMissedIfStillPending({ userId, dateKey: prompt.dateKey, prayer: prompt.prayer });
-    await upsertUser(userId, { lastPrompt: null });
+  if (!(text.startsWith("sudah") || text.startsWith("belum"))) {
     return null;
   }
 
-  return prompt;
-}
+  const intent = text.startsWith("sudah") ? "sudah" : "belum";
+  const rest = text.replace(/^(sudah|belum)\s*/, "").trim();
 
-export async function handlePrayerResponse({ userId, message, client }) {
-  const normalized = message.trim().toLowerCase();
-  const prompt = await resolveActivePrompt(userId);
+  if (!rest) return { intent, prayer: null };
 
-  if (!prompt) {
-    await client.sendMessage(userId, { text: "ℹ️ Belum ada pengingat sholat aktif saat ini." });
-    return;
-  }
-
-  const log = (await getPrayerLog(userId, prompt.dateKey)) ?? {};
-
-  if (normalized === "sudah") {
-    log[prompt.prayer] = "done";
-    await setPrayerLog(userId, prompt.dateKey, log);
-    await upsertUser(userId, { lastPrompt: null });
-    await client.sendMessage(userId, { text: REMINDER_MESSAGES.success });
-    return;
-  }
-
-  if (normalized === "belum") {
-    log[prompt.prayer] = "pending";
-    await setPrayerLog(userId, prompt.dateKey, log);
-    await client.sendMessage(userId, { text: REMINDER_MESSAGES.pending });
-  }
+  const prayer = PRAYER_ALIASES[rest] ?? null;
+  return { intent, prayer };
 }
 
 function clearExisting(userId) {
@@ -222,8 +243,5 @@ export function formatMonthlyReport(logs = {}) {
     return total + misses;
   }, 0);
 
-  return {
-    lines,
-    totalMisses
-  };
+  return { lines, totalMisses };
 }

@@ -7,7 +7,7 @@ import qrcode from "qrcode-terminal";
 import { DEFAULT_CITY, OWNER_GROUP_ID } from "./config.js";
 import { handleOwnerCommand } from "./commands/owner.js";
 import { handleUserCommand } from "./commands/user.js";
-import { handlePrayerResponse, scheduleDailyReminders } from "./services/reminder.js";
+import { handlePrayerResponse, parsePrayerResponse, scheduleDailyReminders } from "./services/reminder.js";
 import { getActiveRentals } from "./services/storage.js";
 import { getMessageText, getRemoteJid, isPrivateChatJid, normalizeUserJid } from "./utils/message.js";
 
@@ -77,7 +77,7 @@ async function startBot() {
         const normalizedText = text.toLowerCase();
         const userJid = normalizeUserJid(remoteJid);
 
-        if (normalizedText === "sudah" || normalizedText === "belum") {
+        if (parsePrayerResponse(normalizedText)) {
           await handlePrayerResponse({ userId: userJid, message: normalizedText, client });
           return;
         }
