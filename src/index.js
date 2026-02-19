@@ -1,94 +1,86 @@
 const baileys = require('@whiskeysockets/baileys');
-const pino = require('pino');
-const { runInitialSetup } = require('./bootstrap/setup');
-const { env } = require('./config/env');
-const { initDb } = require('./db/database');
-const { handleCommand } = require('./handlers/commandHandler');
-const { startScheduler } = require('./scheduler/scheduler');
-const { isPrivateJid } = require('./utils/jid');
+const makeWASocket = baileys.default;
+const { useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion } = baileys;
+const P = require('pino');
+const qrcode = require('qrcode-terminal');
+const fs = require('fs');
+const path = require('path');
 
-const { default: makeWASocket, DisconnectReason, fetchLatestBaileysVersion, useMultiFileAuthState } = baileys;
-const logger = pino({ level: 'info' });
+const { handleCommand } = require('./commands');
+const { startScheduler } = require('./scheduler');
 
-async function connectWhatsApp() {
-  const { state, saveCreds } = await useMultiFileAuthState('auth');
+const AUTH_DIR = path.join(process.cwd(), 'auth');
+
+function ensureDirs() {
+  if (!fs.existsSync(AUTH_DIR)) fs.mkdirSync(AUTH_DIR, { recursive: true });
+  const dataDir = path.join(process.cwd(), 'data');
+  if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
+}
+
+async function startBot() {
+  ensureDirs();
+
+  const { state, saveCreds } = await useMultiFileAuthState(AUTH_DIR);
   const { version } = await fetchLatestBaileysVersion();
 
   const sock = makeWASocket({
     version,
     auth: state,
-    printQRInTerminal: true,
-    logger
+    logger: P({ level: 'silent' }),
+    printQRInTerminal: false
   });
 
   sock.ev.on('creds.update', saveCreds);
 
-  sock.ev.on('connection.update', async (update) => {
-    const { connection, lastDisconnect } = update;
+  sock.ev.on('connection.update', (update) => {
+    const { connection, lastDisconnect, qr } = update;
 
-    if (update.qr) {
-      console.log('\n[whatsapp] Scan QR dari terminal untuk login.\n');
+    if (qr) {
+      console.log('\n📌 Scan QR ini pakai WhatsApp > Linked Devices:');
+      qrcode.generate(qr, { small: true });
     }
 
     if (connection === 'open') {
-      console.log('[whatsapp] ✅ Bot terhubung.');
+      console.log('✅ Bot connected! WhatsApp login sukses.\n');
       startScheduler(sock);
-      await sock.sendMessage(env.ownerGroupId, { text: `✅ ${env.botName} aktif.` });
     }
 
     if (connection === 'close') {
-      const statusCode = lastDisconnect?.error?.output?.statusCode;
-      const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
-      console.error(`[whatsapp] Koneksi tertutup. reconnect=${shouldReconnect}`);
+      const code = lastDisconnect?.error?.output?.statusCode;
+      const shouldReconnect = code !== DisconnectReason.loggedOut;
+      console.log('⚠️ connection closed:', code, 'reconnect:', shouldReconnect);
+
       if (shouldReconnect) {
-        setTimeout(() => {
-          void startBot();
-        }, 2500);
+        setTimeout(() => startBot().catch(console.error), 2000);
       } else {
-        console.error('[whatsapp] Session logout. Hapus folder auth lalu scan ulang.');
+        console.log('❌ Logout. Hapus folder auth/ lalu jalankan ulang untuk QR baru.');
       }
     }
   });
 
   sock.ev.on('messages.upsert', async ({ messages, type }) => {
-    if (type !== 'notify') return;
+    try {
+      if (type !== 'notify') return;
+      const msg = messages[0];
+      if (!msg?.message || msg.key.fromMe) return;
 
-    for (const msg of messages) {
-      if (!msg.message || msg.key.fromMe) continue;
+      const text =
+        msg.message.conversation ||
+        msg.message.extendedTextMessage?.text ||
+        msg.message.imageMessage?.caption ||
+        msg.message.videoMessage?.caption ||
+        '';
 
-      const chatId = msg.key.remoteJid;
-      if (!chatId) continue;
-
-      const text = msg.message.conversation || msg.message.extendedTextMessage?.text;
-      if (!text) continue;
-
-      const sender = msg.key.participant || chatId;
-      const isOwnerGroup = chatId === env.ownerGroupId;
-      if (!isPrivateJid(chatId) && !isOwnerGroup) continue;
-
-      try {
-        await handleCommand(sock, sender, chatId, text);
-      } catch (error) {
-        console.error('[handler] Error:', error);
-        await sock.sendMessage(chatId, { text: 'Terjadi error, coba lagi sebentar ya.' });
-      }
+      if (!text) return;
+      await handleCommand(sock, msg, text);
+    } catch (e) {
+      console.error('[messages.upsert] error:', e?.message || e);
     }
   });
+
+  return sock;
 }
 
-async function startBot() {
-  try {
-    console.log('[startup] Starting bot...');
-    runInitialSetup();
-    initDb();
-    console.log('[startup] Setup + DB siap.');
-    await connectWhatsApp();
-  } catch (error) {
-    console.error('[startup] Error:', error);
-    setTimeout(() => {
-      void startBot();
-    }, 3000);
-  }
-}
-
-void startBot();
+startBot().catch((e) => {
+  console.error('❌ Startup error:', e);
+});
