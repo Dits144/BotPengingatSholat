@@ -1,5 +1,5 @@
 const { read, update } = require('./db');
-const { OWNER_JID, OWNER_GROUP_JID } = require('./config');
+const { OWNER_GROUP_JID } = require('./config');
 const { toDateKey, addDaysMs, normalizePrayerName, safeText } = require('./utils');
 const { fetchScheduleForDate } = require('./prayer');
 const { PRAYER_ORDER } = require('./scheduler');
@@ -14,9 +14,6 @@ const doaList = [
   '🤲 Allahumma inni as’aluka ilman nafi’an, rizqan thayyiban, wa amalan mutaqabbalan.'
 ];
 
-function isOwner(senderJid) {
-  return senderJid === OWNER_JID;
-}
 function isInOwnerGroup(remoteJid) {
   return remoteJid === OWNER_GROUP_JID;
 }
@@ -38,11 +35,11 @@ function formatStatusRow(label, val) {
 async function handleCommand(sock, msg, text) {
   const db = read();
   const remoteJid = msg.key.remoteJid;
-  const senderJid = msg.key.participant || msg.key.remoteJid;
-  const body = safeText(text).toLowerCase();
+    const body = safeText(text).toLowerCase();
   if (!body) return;
 
-  if (isInOwnerGroup(remoteJid) && isOwner(senderJid)) {
+  // Owner commands: pakai validasi group JID saja
+  if (isInOwnerGroup(remoteJid)) {
     if (body.startsWith('addsewa')) {
       const parts = body.split(/\s+/);
       const user = parts[1];

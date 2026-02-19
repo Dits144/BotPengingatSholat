@@ -7,7 +7,7 @@ function must(name, fallback = '') {
 }
 
 module.exports = {
-  OWNER_JID: must('OWNER_JID'),
+  OWNER_JID: process.env.OWNER_JID ?? '',
   OWNER_GROUP_JID: must('OWNER_GROUP_JID'),
   LAT: parseFloat(process.env.LAT ?? '-6.464'),
   LON: parseFloat(process.env.LON ?? '106.778'),

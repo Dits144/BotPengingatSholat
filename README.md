@@ -19,6 +19,8 @@ npm start
 - Scan QR yang muncul di terminal.
 
 ## Owner Commands (di group owner)
+
+> Catatan: command owner sekarang divalidasi dari `OWNER_GROUP_JID` (group pengelola). Jadi tidak tergantung OWNER_JID.
 - `addsewa 628xxxx@c.us 5`
 - `nonaktifsewa 628xxxx@c.us`
 - `listsewa`
