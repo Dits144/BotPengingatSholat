@@ -1,29 +1,22 @@
 {
   "name": "bot-pengingat-sholat-whatsapp",
-  "version": "1.0.0",
-  "description": "WhatsApp bot pengingat sholat otomatis dengan sistem sewa, tracking ibadah, dan rekap bulanan.",
+  "version": "1.1.0",
+  "description": "WhatsApp bot pengingat sholat otomatis (JavaScript) dengan sistem sewa, tracking ibadah, dan rekap bulanan.",
   "main": "dist/index.js",
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "rm -rf dist && mkdir -p dist && cp -r src/* dist/",
     "start": "node dist/index.js",
-    "dev": "tsx watch src/index.ts",
-    "prestart": "npm run build",
-    "lint": "tsc --noEmit"
+    "dev": "node --watch src/index.js",
+    "prestart": "npm run build"
   },
   "dependencies": {
+    "@whiskeysockets/baileys": "^6.7.18",
     "axios": "^1.8.4",
     "better-sqlite3": "^11.7.0",
     "dotenv": "^16.4.5",
     "luxon": "^3.5.0",
     "node-cron": "^3.0.3",
     "pino": "^9.7.0",
-    "sqlite3": "^5.1.7",
-    "@whiskeysockets/baileys": "^6.7.18"
-  },
-  "devDependencies": {
-    "@types/better-sqlite3": "^7.6.12",
-    "@types/node": "^22.10.2",
-    "tsx": "^4.19.2",
-    "typescript": "^5.7.2"
+    "sqlite3": "^5.1.7"
   }
 }

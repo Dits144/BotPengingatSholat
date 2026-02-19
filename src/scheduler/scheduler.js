@@ -1,20 +1,19 @@
-import cron from 'node-cron';
-import { DateTime } from 'luxon';
-import { env } from '../config/env';
-import { PrayerName } from '../constants/messages';
-import { getTodaySchedule } from '../services/prayerService';
-import { expireDueRentals, getActiveRentalUsers } from '../services/rentalService';
-import { createPendingPrompt, hasSentKind, markSentKind, markUnansweredAsMissed } from '../services/trackingService';
-import { formatPrayerPrompt } from '../utils/formatter';
+const cron = require('node-cron');
+const { DateTime } = require('luxon');
+const { env } = require('../config/env');
+const { getTodaySchedule } = require('../services/prayerService');
+const { expireDueRentals, getActiveRentalUsers } = require('../services/rentalService');
+const { createPendingPrompt, hasSentKind, markSentKind, markUnansweredAsMissed } = require('../services/trackingService');
+const { formatPrayerPrompt } = require('../utils/formatter');
 
-const prayerOrder: PrayerName[] = ['subuh', 'dzuhur', 'ashar', 'maghrib', 'isya'];
+const prayerOrder = ['subuh', 'dzuhur', 'ashar', 'maghrib', 'isya'];
 
-export function startScheduler(sock: any) {
+function startScheduler(sock) {
   cron.schedule('* * * * *', async () => {
     try {
       const now = DateTime.now().setZone(env.timezone);
       const current = now.toFormat('HH:mm');
-      const today = now.toISODate()!;
+      const today = now.toISODate();
       const schedule = await getTodaySchedule();
       const users = getActiveRentalUsers();
 
@@ -32,12 +31,10 @@ export function startScheduler(sock: any) {
           await sock.sendMessage(user, { text: '⏰ Imsak 1 menit lagi\nSegera selesaikan sahur ya 🤍' });
           markSentKind(user, today, 'imsak-minus-1');
         }
-
         if (schedule.maghrib === current && !hasSentKind(user, today, 'after-maghrib')) {
           await sock.sendMessage(user, { text: '🌙 Sudah berbuka?\nJangan lupa sholat Maghrib ya 🤍' });
           markSentKind(user, today, 'after-maghrib');
         }
-
         if (schedule.subuh === current && !hasSentKind(user, today, 'after-subuh')) {
           await sock.sendMessage(user, { text: '🌅 Semoga harimu penuh berkah hari ini 🤍' });
           markSentKind(user, today, 'after-subuh');
@@ -60,3 +57,5 @@ export function startScheduler(sock: any) {
     }
   }, { timezone: env.timezone });
 }
+
+module.exports = { startScheduler };

@@ -1,149 +1,74 @@
-# WhatsApp Bot Pengingat Sholat (Node.js + Baileys)
+# WhatsApp Bot Pengingat Sholat (JavaScript + Baileys)
 
-Bot WhatsApp yang **stabil, modular, dan siap production** dengan fitur:
-- Pengingat sholat otomatis ke private chat.
-- Sistem sewa user (aktif/nonaktif otomatis).
+Bot WhatsApp berbasis **Node.js JavaScript** (tanpa TypeScript) dengan fitur:
+- Pengingat sholat otomatis.
+- Sistem sewa user.
 - Tracking ibadah harian.
 - Rekap bulanan.
-- Jadwal sholat dinamis (Aladhan API).
+- Jadwal sholat dinamis dari Aladhan API.
 
-## 1) Stack
-- Node.js + TypeScript
-- Baileys (WhatsApp Web API)
+## Stack
+- Node.js (JavaScript CommonJS)
+- `@whiskeysockets/baileys`
 - SQLite (`better-sqlite3`)
-- `node-cron` untuk scheduler
-- Luxon untuk timezone Asia/Jakarta
+- `node-cron`
+- `axios`
 
-## 2) Struktur Folder
+## Struktur Folder
 
 ```txt
 src/
-  config/
-    env.ts
-  constants/
-    messages.ts
-  db/
-    database.ts
-  handlers/
-    commandHandler.ts
-  scheduler/
-    scheduler.ts
+  bootstrap/setup.js
+  config/env.js
+  constants/messages.js
+  db/database.js
+  handlers/commandHandler.js
+  scheduler/scheduler.js
   services/
-    prayerService.ts
-    rentalService.ts
-    trackingService.ts
+    prayerService.js
+    rentalService.js
+    trackingService.js
   utils/
-    formatter.ts
-    jid.ts
-  index.ts
+    formatter.js
+    jid.js
+  index.js
 ```
 
-## 3) Fitur & Perintah
+Setelah build:
 
-### Owner (akses penuh)
-- `addsewa 628xxxxxx@c.us 5`
-- `delsewa 1`
-- `listsewa`
+```txt
+dist/
+  ...copy dari src...
+  index.js
+```
 
-Owner number di `.env` lewat `OWNER_NUMBER`.
-Group pengelola default:
-`120363423664469094@g.us`
-
-### User
-- `waktusholat`
-- `listsholat`
-- `status`
-- `rekapbulan`
-- `resetsholat`
-- `motivasi`
-- `doa`
-- `ceksewa`
-- `sudah subuh` / `✅ sudah isya`
-- `belum` / `❌ belum`
-
-## 4) Database Schema (SQLite)
-- `rentals`: data sewa user.
-- `prayer_status`: status sholat per user per tanggal.
-- `pending_prompts`: prompt sholat yang menunggu jawaban.
-- `schedule_cache`: cache jadwal sholat harian.
-- `sent_notifications`: anti-duplikasi notifikasi.
-
-Semua schema dibuat otomatis saat bot start (`initDb()`).
-
-## 5) Cara Install
+## Install & Jalankan
 
 ```bash
 npm install
 cp .env.example .env
-```
-
-Edit `.env` sesuai kebutuhan.
-
-## 6) Menjalankan Bot
-
-### Development
-```bash
-npm run dev
-```
-
-### Production
-```bash
 npm run build
 npm start
 ```
 
-Saat pertama run, terminal menampilkan QR terbaru dari Baileys. Scan dengan WhatsApp yang akan jadi bot.
+> `npm start` otomatis menjalankan `prestart` (`npm run build`) supaya `dist/index.js` selalu ada.
 
-## 7) Deploy VPS (Ubuntu)
+## Development
 
-1. Install Node.js 20+.
-2. Upload source ke server.
-3. Install dependency:
-   ```bash
-   npm install
-   ```
-4. Build:
-   ```bash
-   npm run build
-   ```
-5. Jalankan via PM2:
-   ```bash
-   npm i -g pm2
-   pm2 start dist/index.js --name bot-sholat
-   pm2 save
-   pm2 startup
-   ```
-
-## 8) Cara Ganti Owner
-Ubah `.env`:
-```env
-OWNER_NUMBER=628xxxxxxxxxx
+```bash
+npm run dev
 ```
-Format angka tanpa `+`.
 
-## 9) Cara Ubah Lokasi Jadwal Sholat
-Ubah `.env`:
-```env
-PRAYER_ADDRESS=Sasakpanjang Tajurhalang Bogor
-TIMEZONE=Asia/Jakarta
-PRAYER_METHOD=11
-```
-Bot akan ambil jadwal baru otomatis setiap hari (dan bisa dipanggil manual lewat `waktusholat`).
+## Deploy VPS
 
-## 10) Catatan Operasional
-- Bot hanya memproses:
-  - Private chat user.
-  - Group owner (`OWNER_GROUP_ID`) untuk command owner.
-- Jika sewa habis, bot berhenti kirim reminder dan kirim notifikasi masa sewa habis.
-- Jika user tidak menjawab sampai jadwal sholat berikutnya, status sebelumnya otomatis `❌`.
-
-## 11) Build & Start Otomatis Saat Deploy
-
-Jalankan urutan berikut:
 ```bash
 npm install
 npm run build
 npm start
 ```
 
-`npm start` juga menjalankan `prestart` untuk build otomatis agar `dist/index.js` selalu tersedia.
+Atau pakai PM2:
+
+```bash
+pm2 start dist/index.js --name bot-sholat
+```

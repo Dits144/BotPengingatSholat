@@ -1,17 +1,15 @@
-import fs from 'fs';
-import path from 'path';
-import Database from 'better-sqlite3';
-import { env } from '../config/env';
+const fs = require('fs');
+const path = require('path');
+const Database = require('better-sqlite3');
+const { env } = require('../config/env');
 
 const dbDir = path.dirname(env.dbPath);
-if (!fs.existsSync(dbDir)) {
-  fs.mkdirSync(dbDir, { recursive: true });
-}
+if (!fs.existsSync(dbDir)) fs.mkdirSync(dbDir, { recursive: true });
 
-export const db = new Database(env.dbPath);
+const db = new Database(env.dbPath);
 db.pragma('journal_mode = WAL');
 
-export function initDb() {
+function initDb() {
   db.exec(`
     CREATE TABLE IF NOT EXISTS rentals (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -21,7 +19,6 @@ export function initDb() {
       active INTEGER NOT NULL DEFAULT 1,
       notified_expired INTEGER NOT NULL DEFAULT 0
     );
-
     CREATE TABLE IF NOT EXISTS prayer_status (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       user_jid TEXT NOT NULL,
@@ -33,7 +30,6 @@ export function initDb() {
       isya INTEGER,
       UNIQUE(user_jid, date)
     );
-
     CREATE TABLE IF NOT EXISTS pending_prompts (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       user_jid TEXT NOT NULL,
@@ -42,7 +38,6 @@ export function initDb() {
       status TEXT NOT NULL DEFAULT 'pending',
       created_at TEXT NOT NULL
     );
-
     CREATE TABLE IF NOT EXISTS schedule_cache (
       date TEXT PRIMARY KEY,
       location TEXT NOT NULL,
@@ -54,7 +49,6 @@ export function initDb() {
       isya TEXT NOT NULL,
       imsak TEXT NOT NULL
     );
-
     CREATE TABLE IF NOT EXISTS sent_notifications (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       user_jid TEXT NOT NULL,
@@ -64,3 +58,5 @@ export function initDb() {
     );
   `);
 }
+
+module.exports = { db, initDb };
