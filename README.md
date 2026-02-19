@@ -1,106 +1,138 @@
-# Telegram Bot Manajemen Stok Akun Digital
+# WhatsApp Bot Pengingat Sholat (Node.js + Baileys)
 
-Bot Telegram untuk CRUD stok akun digital (email + password), order FEFO, dan tracking masa aktif.
+Bot WhatsApp yang **stabil, modular, dan siap production** dengan fitur:
+- Pengingat sholat otomatis ke private chat.
+- Sistem sewa user (aktif/nonaktif otomatis).
+- Tracking ibadah harian.
+- Rekap bulanan.
+- Jadwal sholat dinamis (Aladhan API).
 
-## Alasan memilih Node.js + TypeScript + Telegraf
-- Telegraf matang untuk Telegram Bot API dan mudah dipadukan dengan scene/wizard.
-- TypeScript memberi type-safety untuk state machine, service, dan query DB.
-- Ekosistem Node memudahkan enkripsi, CSV export, dan deployment.
+## 1) Stack
+- Node.js + TypeScript
+- Baileys (WhatsApp Web API)
+- SQLite (`better-sqlite3`)
+- `node-cron` untuk scheduler
+- Luxon untuk timezone Asia/Jakarta
 
-## Struktur Folder
+## 2) Struktur Folder
 
 ```txt
 src/
-  bot/
-    handlers/        # command dan callback handlers
-    scenes/          # state machine (wizard)
-    keyboards/       # inline keyboard
-    middlewares/     # auth admin + rate limit
-    index.ts
-    types.ts
-  services/          # business logic produk/stok/order/export/log
+  config/
+    env.ts
+  constants/
+    messages.ts
   db/
-    migrations/      # SQL migration file
-    models/          # type model
-    migrate.ts       # runner migration
-  utils/             # tanggal, enkripsi, masking
-  config/            # env + database
-  index.ts           # app entry
+    database.ts
+  handlers/
+    commandHandler.ts
+  scheduler/
+    scheduler.ts
+  services/
+    prayerService.ts
+    rentalService.ts
+    trackingService.ts
+  utils/
+    formatter.ts
+    jid.ts
+  index.ts
 ```
 
-## Fitur Utama
-- Admin only (`ADMIN_IDS`) untuk semua fitur manajemen.
-- Produk: tambah + list.
-- Stok akun: tambah dengan metode:
-  - A. durasi paket aktif saat dijual.
-  - B. sisa aktif sekarang (`1 bulan 5 hari`) => langsung hitung `expires_at`.
-- FEFO order: ambil akun `AVAILABLE` paling dekat expired.
-- Multi-qty order (1/2/3), akun tidak duplikat.
-- Status akun: `AVAILABLE`, `RESERVED`, `SOLD`, `EXPIRED`.
-- Auto mark expired.
-- Export CSV (safe/no password atau include password).
-- Encryption email/password di DB (AES-256-GCM, key dari ENV).
-- Log aktivitas: `ADD_STOCK`, `SELL`, `EXPORT`, `EDIT`, `DELETE` (DELETE disiapkan untuk perluasan).
-- Rate limit dasar user.
+## 3) Fitur & Perintah
 
-## Setup & Run
+### Owner (akses penuh)
+- `addsewa 628xxxxxx@c.us 5`
+- `delsewa 1`
+- `listsewa`
 
-1. Install dependency
+Owner number di `.env` lewat `OWNER_NUMBER`.
+Group pengelola default:
+`120363423664469094@g.us`
+
+### User
+- `waktusholat`
+- `listsholat`
+- `status`
+- `rekapbulan`
+- `resetsholat`
+- `motivasi`
+- `doa`
+- `ceksewa`
+- `sudah subuh` / `✅ sudah isya`
+- `belum` / `❌ belum`
+
+## 4) Database Schema (SQLite)
+- `rentals`: data sewa user.
+- `prayer_status`: status sholat per user per tanggal.
+- `pending_prompts`: prompt sholat yang menunggu jawaban.
+- `schedule_cache`: cache jadwal sholat harian.
+- `sent_notifications`: anti-duplikasi notifikasi.
+
+Semua schema dibuat otomatis saat bot start (`initDb()`).
+
+## 5) Cara Install
+
 ```bash
 npm install
-```
-
-2. Siapkan env
-```bash
 cp .env.example .env
-# isi BOT_TOKEN, ADMIN_IDS, ENCRYPTION_KEY, dll
 ```
 
-3. Jalankan migration
-```bash
-npm run migrate
-```
+Edit `.env` sesuai kebutuhan.
 
-4. Jalankan bot dev
+## 6) Menjalankan Bot
+
+### Development
 ```bash
 npm run dev
 ```
 
-5. Build production
+### Production
 ```bash
-npm run build && npm start
+npm run build
+npm start
 ```
 
-## Konfigurasi ENV
-- `BOT_TOKEN`
-- `ADMIN_IDS` (pisahkan koma)
-- `TIMEZONE=Asia/Jakarta`
-- `ENCRYPTION_KEY`
-- `DATABASE_CLIENT=sqlite|postgres`
-- `DATABASE_URL` (contoh sqlite: `./data/bot.db`, postgres: full connection URI)
+Saat pertama run, terminal menampilkan QR terbaru dari Baileys. Scan dengan WhatsApp yang akan jadi bot.
 
-## Contoh Penggunaan
+## 7) Deploy VPS (Ubuntu)
 
-### 1) Admin tambah stok CapCut dengan sisa aktif `1 bulan 5 hari`
-1. `/admin` -> `Tambah Produk` (jika belum ada) -> isi `CAPCUT PRO`, durasi default, catatan.
-2. `/admin` -> `Tambah Stok`.
-3. Pilih ID produk `CAPCUT PRO`.
-4. Input email + password.
-5. Pilih metode **B**.
-6. Input: `1 bulan 5 hari`.
-7. Bot simpan stok `AVAILABLE`, `start_at=now`, `expires_at=now + 1 bulan + 5 hari`.
+1. Install Node.js 20+.
+2. Upload source ke server.
+3. Install dependency:
+   ```bash
+   npm install
+   ```
+4. Build:
+   ```bash
+   npm run build
+   ```
+5. Jalankan via PM2:
+   ```bash
+   npm i -g pm2
+   pm2 start dist/index.js --name bot-sholat
+   pm2 save
+   pm2 startup
+   ```
 
-### 2) User beli 1 akun
-1. `/start` -> `Lihat Produk` -> `/buy`.
-2. Pilih produk `CAPCUT PRO`, qty `1`.
-3. Bot keluarkan akun A (FEFO), ubah status jadi `SOLD`, isi `sold_to`, `sold_at`.
+## 8) Cara Ganti Owner
+Ubah `.env`:
+```env
+OWNER_NUMBER=628xxxxxxxxxx
+```
+Format angka tanpa `+`.
 
-### 3) User beli 1 akun lagi
-1. Ulangi `/buy` produk yang sama qty `1`.
-2. Bot keluarkan akun B (berbeda dengan akun A), karena akun A sudah `SOLD`.
+## 9) Cara Ubah Lokasi Jadwal Sholat
+Ubah `.env`:
+```env
+PRAYER_ADDRESS=Sasakpanjang Tajurhalang Bogor
+TIMEZONE=Asia/Jakarta
+PRAYER_METHOD=11
+```
+Bot akan ambil jadwal baru otomatis setiap hari (dan bisa dipanggil manual lewat `waktusholat`).
 
-## Catatan Upgrade PostgreSQL
-- Ubah `.env`:
-  - `DATABASE_CLIENT=postgres`
-  - `DATABASE_URL=postgres://user:pass@host:5432/dbname`
-- Jalankan migration yang sama via `npm run migrate`.
+## 10) Catatan Operasional
+- Bot hanya memproses:
+  - Private chat user.
+  - Group owner (`OWNER_GROUP_ID`) untuk command owner.
+- Jika sewa habis, bot berhenti kirim reminder dan kirim notifikasi masa sewa habis.
+- Jika user tidak menjawab sampai jadwal sholat berikutnya, status sebelumnya otomatis `❌`.

@@ -1,22 +1,22 @@
 {
-  "name": "telegram-digital-stock-bot",
+  "name": "bot-pengingat-sholat-whatsapp",
   "version": "1.0.0",
-  "description": "Telegram bot manajemen stok akun digital",
+  "description": "WhatsApp bot pengingat sholat otomatis dengan sistem sewa, tracking ibadah, dan rekap bulanan.",
   "main": "dist/index.js",
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "build": "tsc -p tsconfig.json",
     "start": "node dist/index.js",
-    "migrate": "tsx src/db/migrate.ts",
     "lint": "tsc --noEmit"
   },
   "dependencies": {
+    "axios": "^1.8.4",
+    "baileys": "^6.7.18",
     "better-sqlite3": "^11.7.0",
     "dotenv": "^16.4.5",
-    "knex": "^3.1.0",
     "luxon": "^3.5.0",
-    "pg": "^8.13.1",
-    "telegraf": "^4.16.3"
+    "node-cron": "^3.0.3",
+    "pino": "^9.7.0"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.12",

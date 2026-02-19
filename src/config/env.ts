@@ -2,24 +2,23 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
-function must(name: string, value?: string): string {
-  if (!value) throw new Error(`Missing env: ${name}`);
-  return value;
-}
+const required = [
+  'OWNER_NUMBER',
+  'OWNER_GROUP_ID'
+] as const;
 
-const encryptionKey = must('ENCRYPTION_KEY', process.env.ENCRYPTION_KEY);
-if (encryptionKey.length < 32) {
-  throw new Error('ENCRYPTION_KEY must be at least 32 characters');
+for (const key of required) {
+  if (!process.env[key]) {
+    throw new Error(`Missing env: ${key}`);
+  }
 }
 
 export const env = {
-  botToken: must('BOT_TOKEN', process.env.BOT_TOKEN),
-  adminIds: must('ADMIN_IDS', process.env.ADMIN_IDS)
-    .split(',')
-    .map((v) => Number(v.trim())),
-  timezone: process.env.TIMEZONE || 'Asia/Jakarta',
-  encryptionKey,
-  databaseClient: process.env.DATABASE_CLIENT || 'sqlite',
-  databaseUrl: process.env.DATABASE_URL || './data/bot.db',
-  rateLimitSeconds: Number(process.env.RATE_LIMIT_SECONDS || 3)
+  ownerNumber: process.env.OWNER_NUMBER as string,
+  ownerGroupId: process.env.OWNER_GROUP_ID as string,
+  timezone: process.env.TIMEZONE ?? 'Asia/Jakarta',
+  dbPath: process.env.DATABASE_PATH ?? './data/bot.db',
+  prayerAddress: process.env.PRAYER_ADDRESS ?? 'Sasakpanjang Tajurhalang Bogor',
+  prayerMethod: Number(process.env.PRAYER_METHOD ?? '11'),
+  botName: process.env.BOT_NAME ?? 'Bot Pengingat Sholat'
 };
