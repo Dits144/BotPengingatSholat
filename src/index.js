@@ -17,6 +17,16 @@ function ensureDirs() {
   if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
 }
 
+function extractText(msg) {
+  return (
+    msg.message?.conversation ||
+    msg.message?.extendedTextMessage?.text ||
+    msg.message?.imageMessage?.caption ||
+    msg.message?.videoMessage?.caption ||
+    ''
+  );
+}
+
 async function startBot() {
   ensureDirs();
 
@@ -27,7 +37,8 @@ async function startBot() {
     version,
     auth: state,
     logger: P({ level: 'silent' }),
-    printQRInTerminal: false
+    printQRInTerminal: false,
+    markOnlineOnConnect: false
   });
 
   sock.ev.on('creds.update', saveCreds);
@@ -58,23 +69,27 @@ async function startBot() {
     }
   });
 
+  // Penting: proses SEMUA messages, jangan hanya messages[0],
+  // supaya command tidak miss saat ada message yang gagal decrypt (Bad MAC).
   sock.ev.on('messages.upsert', async ({ messages, type }) => {
     try {
       if (type !== 'notify') return;
-      const msg = messages[0];
-      if (!msg?.message || msg.key.fromMe) return;
 
-      const text =
-        msg.message.conversation ||
-        msg.message.extendedTextMessage?.text ||
-        msg.message.imageMessage?.caption ||
-        msg.message.videoMessage?.caption ||
-        '';
+      for (const msg of messages) {
+        if (!msg?.message || msg.key?.fromMe) continue;
 
-      if (!text) return;
-      await handleCommand(sock, msg, text);
+        const text = extractText(msg);
+        if (!text) continue;
+
+        await handleCommand(sock, msg, text);
+      }
     } catch (e) {
-      console.error('[messages.upsert] error:', e?.message || e);
+      const message = e?.message || String(e);
+      if (message.includes('Bad MAC')) {
+        console.log('⚠️ Sesi enkripsi berubah (Bad MAC), bot akan lanjut otomatis.');
+        return;
+      }
+      console.error('[messages.upsert] error:', message);
     }
   });
 
@@ -82,5 +97,11 @@ async function startBot() {
 }
 
 startBot().catch((e) => {
+  const message = e?.message || String(e);
+  if (message.includes('Bad MAC')) {
+    console.log('⚠️ Startup sempat kena Bad MAC, coba lagi otomatis...');
+    setTimeout(() => startBot().catch(console.error), 2000);
+    return;
+  }
   console.error('❌ Startup error:', e);
 });

@@ -71,3 +71,9 @@ npm start
 rmdir /s /q auth
 npm start
 ```
+
+
+## Catatan Bad MAC
+Jika muncul log `Bad MAC`, itu biasanya karena pergantian session key WhatsApp.
+Bot sekarang tetap melanjutkan proses message lain secara otomatis.
+Jika masih macet, hapus folder `auth/` lalu login ulang QR.
