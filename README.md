@@ -1,106 +1,79 @@
-# Telegram Bot Manajemen Stok Akun Digital
+# Bot Pengingat Sholat WhatsApp (JavaScript + Baileys)
 
-Bot Telegram untuk CRUD stok akun digital (email + password), order FEFO, dan tracking masa aktif.
-
-## Alasan memilih Node.js + TypeScript + Telegraf
-- Telegraf matang untuk Telegram Bot API dan mudah dipadukan dengan scene/wizard.
-- TypeScript memberi type-safety untuk state machine, service, dan query DB.
-- Ekosistem Node memudahkan enkripsi, CSV export, dan deployment.
-
-## Struktur Folder
-
-```txt
-src/
-  bot/
-    handlers/        # command dan callback handlers
-    scenes/          # state machine (wizard)
-    keyboards/       # inline keyboard
-    middlewares/     # auth admin + rate limit
-    index.ts
-    types.ts
-  services/          # business logic produk/stok/order/export/log
-  db/
-    migrations/      # SQL migration file
-    models/          # type model
-    migrate.ts       # runner migration
-  utils/             # tanggal, enkripsi, masking
-  config/            # env + database
-  index.ts           # app entry
-```
-
-## Fitur Utama
-- Admin only (`ADMIN_IDS`) untuk semua fitur manajemen.
-- Produk: tambah + list.
-- Stok akun: tambah dengan metode:
-  - A. durasi paket aktif saat dijual.
-  - B. sisa aktif sekarang (`1 bulan 5 hari`) => langsung hitung `expires_at`.
-- FEFO order: ambil akun `AVAILABLE` paling dekat expired.
-- Multi-qty order (1/2/3), akun tidak duplikat.
-- Status akun: `AVAILABLE`, `RESERVED`, `SOLD`, `EXPIRED`.
-- Auto mark expired.
-- Export CSV (safe/no password atau include password).
-- Encryption email/password di DB (AES-256-GCM, key dari ENV).
-- Log aktivitas: `ADD_STOCK`, `SELL`, `EXPORT`, `EDIT`, `DELETE` (DELETE disiapkan untuk perluasan).
-- Rate limit dasar user.
-
-## Setup & Run
-
-1. Install dependency
-```bash
+## 1) Install
+```powershell
+cd C:\xampp\htdocs\BotSholat
 npm install
 ```
 
-2. Siapkan env
-```bash
-cp .env.example .env
-# isi BOT_TOKEN, ADMIN_IDS, ENCRYPTION_KEY, dll
+## 2) Setup ENV
+Copy `.env.example` jadi `.env` lalu isi minimal `OWNER_GROUP_JID`.
+`OWNER_JID` opsional.
+
+`REMINDER_TEXT` sekarang otomatis support newline asli dari `\n`.
+
+## 3) Jalankan Bot
+```powershell
+npm start
 ```
 
-3. Jalankan migration
-```bash
-npm run migrate
+## 4) Scan QR
+- Buka WhatsApp > Linked devices > Link a device
+- Scan QR yang muncul di terminal.
+
+## Owner Commands (di group owner)
+- `addsewa 628xxxx@c.us 5`
+- `nonaktifsewa 628xxxx@c.us`
+- `listsewa`
+- `helpsholat`
+
+Saat `addsewa` berhasil, bot otomatis kirim notif ke user:
+`✅ Bot sholat kamu sudah aktif...`
+
+## User Commands (private chat)
+- `waktusholat`
+- `listsholat` / `status`
+- `rekapbulan`
+- `ceksewa`
+- `motivasi`
+- `doa`
+- `sudah isya / sudah subuh / sudah dzuhur / sudah ashar / sudah maghrib`
+- `belum`
+- `helpsholat`
+
+Jika user salah ketik command, bot akan membalas:
+`Perintah tidak dikenali. Ketik helpsholat untuk melihat command.`
+
+---
+
+## ✅ LANGKAH MENJALANKAN (ringkas)
+1. Masuk folder:
+```powershell
+cd C:\xampp\htdocs\BotSholat
 ```
 
-4. Jalankan bot dev
-```bash
-npm run dev
+2. Install:
+```powershell
+npm install
 ```
 
-5. Build production
-```bash
-npm run build && npm start
+3. Buat `.env` dari `.env.example`, isi owner/group.
+
+4. Start:
+```powershell
+npm start
 ```
 
-## Konfigurasi ENV
-- `BOT_TOKEN`
-- `ADMIN_IDS` (pisahkan koma)
-- `TIMEZONE=Asia/Jakarta`
-- `ENCRYPTION_KEY`
-- `DATABASE_CLIENT=sqlite|postgres`
-- `DATABASE_URL` (contoh sqlite: `./data/bot.db`, postgres: full connection URI)
+5. Scan QR yang tampil.
 
-## Contoh Penggunaan
+### Kalau QR tidak muncul
+```powershell
+rmdir /s /q auth
+npm start
+```
 
-### 1) Admin tambah stok CapCut dengan sisa aktif `1 bulan 5 hari`
-1. `/admin` -> `Tambah Produk` (jika belum ada) -> isi `CAPCUT PRO`, durasi default, catatan.
-2. `/admin` -> `Tambah Stok`.
-3. Pilih ID produk `CAPCUT PRO`.
-4. Input email + password.
-5. Pilih metode **B**.
-6. Input: `1 bulan 5 hari`.
-7. Bot simpan stok `AVAILABLE`, `start_at=now`, `expires_at=now + 1 bulan + 5 hari`.
 
-### 2) User beli 1 akun
-1. `/start` -> `Lihat Produk` -> `/buy`.
-2. Pilih produk `CAPCUT PRO`, qty `1`.
-3. Bot keluarkan akun A (FEFO), ubah status jadi `SOLD`, isi `sold_to`, `sold_at`.
-
-### 3) User beli 1 akun lagi
-1. Ulangi `/buy` produk yang sama qty `1`.
-2. Bot keluarkan akun B (berbeda dengan akun A), karena akun A sudah `SOLD`.
-
-## Catatan Upgrade PostgreSQL
-- Ubah `.env`:
-  - `DATABASE_CLIENT=postgres`
-  - `DATABASE_URL=postgres://user:pass@host:5432/dbname`
-- Jalankan migration yang sama via `npm run migrate`.
+## Catatan Bad MAC
+Jika muncul log `Bad MAC`, itu biasanya karena pergantian session key WhatsApp.
+Bot sekarang tetap melanjutkan proses message lain secara otomatis.
+Jika masih macet, hapus folder `auth/` lalu login ulang QR.

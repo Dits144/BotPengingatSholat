@@ -1,27 +1,16 @@
 {
-  "name": "telegram-digital-stock-bot",
+  "name": "bot-pengingat-sholat-whatsapp",
   "version": "1.0.0",
-  "description": "Telegram bot manajemen stok akun digital",
-  "main": "dist/index.js",
+  "main": "src/index.js",
+  "type": "commonjs",
   "scripts": {
-    "dev": "tsx watch src/index.ts",
-    "build": "tsc -p tsconfig.json",
-    "start": "node dist/index.js",
-    "migrate": "tsx src/db/migrate.ts",
-    "lint": "tsc --noEmit"
+    "start": "node src/index.js"
   },
   "dependencies": {
-    "better-sqlite3": "^11.7.0",
+    "@whiskeysockets/baileys": "^6.7.16",
+    "axios": "^1.6.8",
     "dotenv": "^16.4.5",
-    "knex": "^3.1.0",
-    "luxon": "^3.5.0",
-    "pg": "^8.13.1",
-    "telegraf": "^4.16.3"
-  },
-  "devDependencies": {
-    "@types/better-sqlite3": "^7.6.12",
-    "@types/node": "^22.10.2",
-    "tsx": "^4.19.2",
-    "typescript": "^5.7.2"
+    "node-cron": "^3.0.3",
+    "qrcode-terminal": "^0.12.0"
   }
 }
