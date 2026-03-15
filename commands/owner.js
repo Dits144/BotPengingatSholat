@@ -3,62 +3,70 @@ const { formatWib, rentalStatusText } = require('../utils/format');
 const { parseOwnerActivate, parseOwnerDeactivate, parseInfoGroup } = require('../utils/parser');
 
 async function fetchGroupMeta(sock, groupId) {
-  try {
-    return await sock.groupMetadata(groupId);
-  } catch {
-    return null;
+  try { return await sock.groupMetadata(groupId); } catch { return null; }
+}
+
+async function handleBroadcast(sock, message) {
+  const text = message.trim();
+  if (text.toLowerCase() === '#broadcast') {
+    return ['⚠️ Format yang benar:', '#broadcast@(pesan)', '', 'Contoh:', '#broadcast@Assalamualaikum, bot akan maintenance malam ini pukul 23.00 WIB.'].join('\n');
   }
+  const m = text.match(/^#broadcast@([\s\S]+)$/i);
+  if (!m) return null;
+  const payload = m[1].trim();
+  if (!payload) return 'Pesan broadcast tidak boleh kosong.';
+
+  const groups = db.prepare('SELECT DISTINCT group_id FROM group_rentals').all().map((r) => r.group_id);
+  let success = 0;
+  let failed = 0;
+  for (const gid of groups) {
+    try {
+      await sock.sendMessage(gid, { text: `📢 BROADCAST OWNER\n\n${payload}` });
+      success += 1;
+    } catch (e) {
+      failed += 1;
+      console.error('Broadcast gagal ke', gid, e.message);
+    }
+  }
+  return ['✅ Broadcast berhasil dikirim', `Total grup: ${groups.length}`, `Berhasil: ${success}`, `Gagal: ${failed}`].join('\n');
 }
 
 async function handleOwnerCommand({ sock, text, groupId, isGroupMessage }) {
+  const bc = await handleBroadcast(sock, text);
+  if (bc) return bc;
+
   const infoReq = parseInfoGroup(text);
   if (infoReq) {
     const targetGroupId = infoReq.groupId || (isGroupMessage ? groupId : null);
-    if (!targetGroupId) return 'Contoh: #infogroup 1203xxxx@g.us';
+    if (!targetGroupId) return '⚠️ Format yang benar:\n#infogroup (idgrup)\n\nContoh:\n#infogroup 1203xxxx@g.us';
     const meta = await fetchGroupMeta(sock, targetGroupId);
     if (!meta) return 'Group tidak ditemukan / bot tidak ada di grup tersebut.';
     const rental = getRental(targetGroupId);
     const status = rentalStatusText(rental);
-    return [
-      'ℹ️ INFO GROUP',
-      `Nama: ${meta.subject}`,
-      `ID: ${meta.id}`,
-      `Member: ${meta.participants.length}`,
-      '',
-      `🔑 Status Sewa: ${status.status}`,
-      `Expired: ${rental?.expire_at ? `${formatWib(rental.expire_at)} WIB` : '-'}`,
-      `Sisa: ${status.status === 'AKTIF' ? `${status.remainingDays} hari` : '-'}`
-    ].join('\n');
+    return ['ℹ️ INFO GROUP', `Nama: ${meta.subject}`, `ID: ${meta.id}`, `Member: ${meta.participants.length}`, '', `🔑 Status Sewa: ${status.status}`, `Expired: ${rental?.expire_at ? `${formatWib(rental.expire_at)} WIB` : '-'}`, `Sisa: ${status.status === 'AKTIF' ? `${status.remainingDays} hari` : '-'}`].join('\n');
   }
 
+  if (text.trim().toLowerCase() === '#aktif') return ['⚠️ Format yang benar:', '#aktif (idgrup) (hari)', '', 'Contoh:', '#aktif 120363xxxx@g.us 30'].join('\n');
   const aktif = parseOwnerActivate(text);
   if (aktif) {
     if (!aktif.groupId.endsWith('@g.us') || aktif.days <= 0) return 'Format: #aktif 1203xxxx@g.us 30';
     const updated = extendRental(aktif.groupId, aktif.days, 'owner');
     const meta = await fetchGroupMeta(sock, aktif.groupId);
-    return [
-      '✅ Grup berhasil diaktifkan',
-      '',
-      `Nama: ${meta?.subject || aktif.groupId}`,
-      `Expired: ${formatWib(updated.expire_at)} WIB`,
-      `Durasi: ${aktif.days} hari`
-    ].join('\n');
+    return ['✅ Grup berhasil diaktifkan', '', `Nama: ${meta?.subject || aktif.groupId}`, `Expired: ${formatWib(updated.expire_at)} WIB`, `Durasi: ${aktif.days} hari`].join('\n');
   }
 
+  if (text.trim().toLowerCase() === '#nonaktif') return ['⚠️ Format yang benar:', '#nonaktif (idgrup)', '', 'Contoh:', '#nonaktif 120363xxxx@g.us'].join('\n');
   const nonaktif = parseOwnerDeactivate(text);
   if (nonaktif) {
     deactivateRental(nonaktif.groupId, 'owner');
-    return '⛔ Grup dinonaktifkan.\nFitur keuangan terkunci.';
+    return '⛔ Grup dinonaktifkan.';
   }
 
   if (/^#statussewa$/i.test(text.trim())) {
     if (isGroupMessage) {
       const rental = getRental(groupId);
       const status = rentalStatusText(rental);
-      return [
-        '📌 STATUS SEWA',
-        `${groupId} | ${status.status}${status.status === 'AKTIF' ? ` | sisa ${status.remainingDays} hari` : ''}`
-      ].join('\n');
+      return ['📌 STATUS SEWA', `${groupId} | ${status.status}${status.status === 'AKTIF' ? ` | sisa ${status.remainingDays} hari` : ''}`].join('\n');
     }
 
     const rows = db.prepare('SELECT * FROM group_rentals ORDER BY updated_at DESC').all();
@@ -70,7 +78,7 @@ async function handleOwnerCommand({ sock, text, groupId, isGroupMessage }) {
     return ['📌 STATUS SEWA', '', ...lines].join('\n');
   }
 
-  return 'Command owner tidak dikenali. Gunakan: #infogroup, #aktif, #nonaktif, #statussewa';
+  return 'Command owner: #infogroup, #aktif, #nonaktif, #statussewa, #broadcast';
 }
 
 module.exports = { handleOwnerCommand };

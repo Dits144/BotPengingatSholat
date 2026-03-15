@@ -29,7 +29,8 @@ CREATE TABLE IF NOT EXISTS group_rentals (
   expire_at TEXT,
   updated_by TEXT,
   updated_at TEXT NOT NULL,
-  last_warned_at TEXT
+  last_warned_at TEXT,
+  last_h1_warning_at TEXT
 );
 
 CREATE TABLE IF NOT EXISTS bot_owners (
@@ -56,8 +57,9 @@ CREATE TABLE IF NOT EXISTS custom_commands (
   group_id TEXT NOT NULL,
   keyword TEXT NOT NULL,
   response TEXT NOT NULL,
-  media_url TEXT,
+  media_path TEXT,
   media_type TEXT,
+  caption_text TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   deleted_at TEXT
@@ -114,10 +116,12 @@ function ensureColumn(table, column, ddl) {
   }
 }
 
-ensureColumn('custom_commands', 'media_url', 'media_url TEXT');
+ensureColumn('custom_commands', 'media_path', 'media_path TEXT');
 ensureColumn('custom_commands', 'media_type', 'media_type TEXT');
+ensureColumn('custom_commands', 'caption_text', 'caption_text TEXT');
 ensureColumn('group_settings', 'header_text', 'header_text TEXT');
 ensureColumn('reminders', 'created_by', 'created_by TEXT');
+ensureColumn('group_rentals', 'last_h1_warning_at', 'last_h1_warning_at TEXT');
 
 function nowWibIso() {
   return DateTime.now().setZone(TIMEZONE).toISO();

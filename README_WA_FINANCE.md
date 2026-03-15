@@ -1,138 +1,71 @@
 # WhatsApp Bot Keuangan Kegiatan (Baileys + SQLite)
 
-## Perubahan Struktur Folder
+## Update struktur file
 
-```txt
-.
-├── index.js
-├── config.js
-├── package.json
-├── db/
-│   └── database.js
-├── commands/
-│   ├── finance.js
-│   ├── participants.js
-│   ├── customCommands.js
-│   ├── reminder.js
-│   ├── todo.js
-│   ├── weather.js
-│   ├── rental.js
-│   ├── owner.js
-│   ├── calc.js
-│   ├── help.js
-│   └── info.js
-└── utils/
-    ├── jid.js
-    ├── format.js
-    └── parser.js
-```
+- `index.js` (router utama + role + gate sewa + typo suggestion)
+- `commands/help.js`
+- `commands/owner.js` (`#broadcast`)
+- `commands/customCommands.js` (support foto)
+- `commands/reminder.js` (scheduler reminder)
+- `commands/rental.js` (H-1 sewa)
+- `commands/participants.js` (setheader dinamis)
+- `commands/todo.js`
+- `commands/weather.js`
+- `db/database.js` (schema update)
+- `utils/typo.js` (suggest command typo)
 
-## Schema Database Baru / Update
+## Schema DB utama (baru/diupdate)
 
-- `group_rentals`: status sewa grup (gate utama).
-- `transactions`: data keuangan.
-- `participants`: data peserta.
-- `custom_commands`: keyword -> response + `media_url`, `media_type`.
-- `group_settings`: `header_text`, `weather_location`.
-- `reminders`: jadwal reminder (`remind_type`, `remind_value`, `remind_text`, `created_by`).
-- `reminder_dispatch`: anti duplikat kirim reminder otomatis.
-- `todos`: todo list grup.
-- `bot_owners`: daftar owner dinamis.
+- `custom_commands`: tambah `media_type`, `media_path`, `caption_text`
+- `group_rentals`: tambah `last_h1_warning_at`
+- `group_settings`: pakai `header_text`, `weather_location`
+- `reminders`: tambah `created_by`
+- `reminder_dispatch`: anti duplikat reminder scheduler
 
-## Aturan Gate Sewa
-Jika grup belum aktif / expired:
-- command user/admin diblok (menu/help/listpeserta/riwayat/saldo/kalkulator/todo/reminder/weather/custom command).
-- Bot balas:
+## Logic inti
 
-```txt
-🔒 BOT BELUM DIAKTIFKAN
+### 1) Silent rental gate
+Jika grup tidak aktif sewa dan pengirim bukan owner => bot **diam** (tidak membalas).
 
-Bot belum aktif di grup ini atau masa sewa sudah habis.
+### 2) Owner command yang tetap jalan
+- `#infogroup`
+- `#aktif`
+- `#nonaktif`
+- `#statussewa`
+- `#broadcast`
 
-Hubungi owner untuk aktivasi.
+### 3) Typo suggestion
+Jika command typo tapi mirip (Levenshtein), bot memberi saran command paling dekat.
 
-Perintah owner:
-#aktif (idgrup) (hari)
-```
+### 4) Broadcast owner
+`#broadcast@(pesan)` mengirim ke seluruh group_id pada tabel rental.
 
-Yang tetap jalan hanya command `#...` dan hanya owner.
+### 5) Reminder H-1 sewa habis
+Jika sisa 1 hari, kirim peringatan 1x per grup (pakai `last_h1_warning_at`).
 
-## Role
+### 6) Custom command foto
+Jika `command KEYWORD@(text)` dibuat sambil kirim/reply foto:
+- media didownload ke folder lokal `media/commands`
+- path disimpan di DB
+- saat keyword dipanggil, bot kirim foto + caption
 
-### USER
-- `listpeserta`
-- `riwayat`
-- kalkulator (`tambah/kurang/kali/bagi`)
-- jalankan keyword custom (exact)
-- `weather` / `cuaca`
-- `todolist` / `todo lihat`
+## Contoh pemakaian
 
-### ADMIN GROUP
-- `addpeserta`, `updatepeserta`, `delpeserta`
-- transaksi keuangan (`+`, `-`, `saldo`, `edit/hapus/detail`)
-- `command`, `delcommand`, `setheader`
-- `todo tambah`, `todo selesai`, `doto`
-- `remind`, `listremind`, `noremind`
-- `lokweather`
+- `help`
+- `setheader@PESERTA\nOPEN TRIP PAPANDAYAN\nTanggal: 28 Maret 2026`
+- `addpeserta Radit@(No HP: 08xxx | Kota: Bogor)`
+- `command TERIMAKASIH@thank you sudah order di DitsStore` (sambil foto)
+- `terimakasih` (trigger kirim foto+caption)
+- `remind 05:00@bangun sholat subuh`
+- `todo tambah revisi skripsi`
+- `doto 1`
+- `weather`
+- `lokweather Bogor`
+- `#broadcast@Assalamualaikum, maintenance malam ini pukul 23.00 WIB.`
 
-### OWNER
-- semua akses + command `#infogroup`, `#aktif`, `#nonaktif`, `#statussewa`
-
-## Fitur Baru / Perbaikan
-
-### 1) Help lebih rapi + emoji
-- menu dipisah USER / ADMIN / REMINDER / TODO / CUACA.
-- claim owner dihapus dari help.
-
-### 2) Kalkulator UX
-Jika user ketik hanya `tambah` / `kurang` / `kali` / `bagi`:
-
-```txt
-🧮 FORMAT KALKULATOR
-
-tambah 10 5
-kurang 10 5
-kali 10 5
-bagi 10 5
-```
-
-### 3) Header peserta dinamis
-- default header dipakai jika belum diset.
-- admin bisa set:
-  - `setheader@(text)`
-
-### 4) Custom command bisa foto
-- Simpan command text: `command KEYWORD@(text)`
-- Jika command dibuat sambil reply foto, media disimpan.
-- Saat keyword dipanggil:
-  - jika ada media: kirim foto + caption
-  - jika tidak: kirim text saja
-
-### 5) Reminder otomatis (Asia/Jakarta)
-- tambah reminder:
-  - `remind 05:00@bangun sholat subuh` (harian)
-  - `remind 17/08/2026@Peringatan Kemerdekaan` (tanggal)
-- list: `listremind`
-- hapus: `noremind 05:00`
-- bot kirim otomatis saat waktunya.
-
-### 6) To-Do List
-- tambah: `todo tambah revisi skripsi`
-- lihat: `todolist` / `todo lihat`
-- selesai: `todo selesai 1` atau `doto 1`
-
-### 7) Weather
-- cek: `weather` / `cuaca`
-- ubah lokasi: `lokweather Bogor` atau share lokasi dengan caption `lokweather`
-
-## Cara Run
+## Cara run
 
 ```bash
 npm install
 npm start
 ```
-
-## Error Handling & Parsing
-- validasi format command dengan regex + pesan contoh.
-- soft delete untuk data mutable (participant/custom/reminder/todo/transaksi).
-- fallback pesan error umum saat exception.

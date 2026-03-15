@@ -25,8 +25,9 @@ function parseRemind(raw) {
 }
 
 function handleRemind(ctx, canManage) {
+  if (ctx.text.trim().toLowerCase() === 'remind') return ['⚠️ Format yang benar:', 'remind (time/date)@(text)', '', 'Contoh:', 'remind 05:00@bangun sholat subuh', 'remind 17/08/2026@Peringatan Kemerdekaan Indonesia'].join('\n');
   if (!/^remind\s+/i.test(ctx.text.trim())) return null;
-  if (!canManage) return '⛔ Hanya admin grup atau owner bot yang boleh tambah reminder.';
+  if (!canManage) return '❌ Anda tidak memiliki akses untuk perintah ini.';
 
   const parsed = parseRemind(ctx.text.trim());
   if (!parsed) return 'Format salah. Contoh: remind 05:00@bangun sholat subuh atau remind 17/08/2026@Peringatan Kemerdekaan Indonesia';
@@ -55,9 +56,10 @@ function handleListRemind(ctx) {
 }
 
 function handleNoRemind(ctx, canManage) {
+  if (ctx.text.trim().toLowerCase() === 'noremind') return ['⚠️ Format yang benar:', 'noremind (time/date)', '', 'Contoh:', 'noremind 05:00'].join('\n');
   const m = ctx.text.trim().match(/^noremind\s+(.+)$/i);
   if (!m) return null;
-  if (!canManage) return '⛔ Hanya admin grup atau owner bot yang boleh hapus reminder.';
+  if (!canManage) return '❌ Anda tidak memiliki akses untuk perintah ini.';
 
   const value = m[1].trim();
   if (!value) return 'Format salah. Contoh: noremind 05:00 atau noremind 17/08/2026';

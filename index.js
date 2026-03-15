@@ -1,3 +1,6 @@
+const fs = require('fs');
+const path = require('path');
+const crypto = require('crypto');
 const { default: makeWASocket, useMultiFileAuthState, fetchLatestBaileysVersion, DisconnectReason, downloadContentFromMessage } = require('baileys');
 const pino = require('pino');
 const qrcode = require('qrcode-terminal');
@@ -13,9 +16,15 @@ const reminder = require('./commands/reminder');
 const todo = require('./commands/todo');
 const weather = require('./commands/weather');
 const { handleOwnerCommand } = require('./commands/owner');
-const { isRentalActive, lockedMessage, shouldWarnExpiring } = require('./commands/rental');
+const { isRentalActive, shouldWarnExpiring } = require('./commands/rental');
+const { suggestCommand } = require('./utils/typo');
 
 const cooldown = new Map();
+const COMMAND_CANDIDATES = [
+  'help', 'menu', 'listpeserta', 'riwayat', 'saldo', 'tambah', 'kurang', 'kali', 'bagi', 'weather', 'cuaca', 'todolist',
+  'addpeserta', 'updatepeserta', 'delpeserta', 'setheader', 'command', 'listcommand', 'detailcommand', 'delcommand',
+  'remind', 'listremind', 'noremind', 'todo', 'doto', 'lokweather'
+];
 
 function getText(msg) {
   const c = msg.message;
@@ -29,8 +38,7 @@ function isAdmin(participantsMeta, senderId) {
 }
 
 function isSenderOwner(senderJid) {
-  const ownerPool = [...OWNER_NUMBERS, ...getOwnerNumbers()];
-  return isOwner(senderJid, ownerPool);
+  return isOwner(senderJid, [...OWNER_NUMBERS, ...getOwnerNumbers()]);
 }
 
 function inCooldown(senderId, key, ms = 1000) {
@@ -42,21 +50,39 @@ function inCooldown(senderId, key, ms = 1000) {
   return false;
 }
 
-async function extractQuotedImageBase64(msg) {
-  const quoted = msg?.message?.extendedTextMessage?.contextInfo?.quotedMessage;
-  const imageMsg = quoted?.imageMessage;
-  if (!imageMsg) return null;
-
-  const stream = await downloadContentFromMessage(imageMsg, 'image');
+async function streamToBuffer(message, type) {
+  const stream = await downloadContentFromMessage(message, type);
   const chunks = [];
   for await (const chunk of stream) chunks.push(chunk);
-  return Buffer.concat(chunks).toString('base64');
+  return Buffer.concat(chunks);
+}
+
+async function extractCommandMedia(msg, text) {
+  if (!/^command\s+/i.test(text)) return null;
+  const mediaDir = path.join(process.cwd(), 'media', 'commands');
+  fs.mkdirSync(mediaDir, { recursive: true });
+
+  if (msg.message?.imageMessage) {
+    const buf = await streamToBuffer(msg.message.imageMessage, 'image');
+    const fp = path.join(mediaDir, `${Date.now()}-${crypto.randomBytes(4).toString('hex')}.jpg`);
+    fs.writeFileSync(fp, buf);
+    return { type: 'image', path: fp };
+  }
+
+  const quoted = msg?.message?.extendedTextMessage?.contextInfo?.quotedMessage;
+  if (quoted?.imageMessage) {
+    const buf = await streamToBuffer(quoted.imageMessage, 'image');
+    const fp = path.join(mediaDir, `${Date.now()}-${crypto.randomBytes(4).toString('hex')}.jpg`);
+    fs.writeFileSync(fp, buf);
+    return { type: 'image', path: fp };
+  }
+
+  return null;
 }
 
 async function start() {
   const { state, saveCreds } = await useMultiFileAuthState(AUTH_DIR);
   const { version } = await fetchLatestBaileysVersion();
-
   const sock = makeWASocket({ version, auth: state, printQRInTerminal: true, logger: pino({ level: LOG_LEVEL }) });
   reminder.startReminderWorker(sock);
 
@@ -66,12 +92,10 @@ async function start() {
       console.log('📱 Scan QR berikut di WhatsApp (Linked Devices):');
       qrcode.generate(qr, { small: true });
     }
-
     if (connection === 'open') console.log('✅ Bot connected');
     if (connection === 'close') {
       const code = lastDisconnect?.error?.output?.statusCode;
       if (code !== DisconnectReason.loggedOut) start().catch(console.error);
-      else console.log('Session logged out. Scan ulang QR.');
     }
   });
 
@@ -96,24 +120,19 @@ async function start() {
       const senderIsOwner = isSenderOwner(senderId);
 
       if (isGroupMessage) {
-        const warning = shouldWarnExpiring(groupId);
-        if (warning) await sock.sendMessage(groupId, { text: warning });
+        const h1Warn = shouldWarnExpiring(groupId);
+        if (h1Warn) await sock.sendMessage(groupId, { text: h1Warn });
       }
 
       if (/^#/.test(text)) {
-        if (!senderIsOwner) {
-          await sock.sendMessage(groupId, { text: '❌ Perintah ini hanya untuk OWNER bot.' }, { quoted: msg });
-          return;
-        }
+        if (!senderIsOwner) return; // silent
         const resp = await handleOwnerCommand({ sock, text, groupId, isGroupMessage });
-        await sock.sendMessage(groupId, { text: resp }, { quoted: msg });
+        if (resp) await sock.sendMessage(groupId, { text: resp }, { quoted: msg });
         return;
       }
 
-      if (isGroupMessage && !isRentalActive(groupId)) {
-        await sock.sendMessage(groupId, { text: lockedMessage() }, { quoted: msg });
-        return;
-      }
+      // silent mode rental gate
+      if (isGroupMessage && !isRentalActive(groupId) && !senderIsOwner) return;
 
       let senderIsAdmin = false;
       if (isGroupMessage) {
@@ -130,70 +149,40 @@ async function start() {
         || /^todolist$/i.test(text)
         || /^todo\s+lihat$/i.test(text);
 
-      const adminCommands = /^(menu|help|info|[+-]|saldo(\s|$)|edit\s+\d+|hapus\s+\d+|detail\s+\d+|addpeserta\s+|delpeserta\s+no\s+\d+|updatepeserta\s+no\s+\d+|setheader@|command\s+|delcommand\s+|listcommand$|detailcommand\s+|remind\s+|listremind$|noremind\s+|todo\s+tambah\s+|todo\s+selesai\s+\d+|doto\s+\d+|lokweather\s+)/i.test(text);
-
+      const adminCommands = /^(menu|help|[+-]|saldo(\s|$)|edit\s+\d+|hapus\s+\d+|detail\s+\d+|addpeserta\s*|delpeserta\s*|updatepeserta\s*|setheader\s*|command\s*|delcommand\s*|listcommand$|detailcommand\s+|remind\s*|listremind$|noremind\s*|todo\s*|doto\s*|lokweather\s*)/i.test(text);
       if (!canAdminManage && adminCommands && !userAllowed) {
-        await sock.sendMessage(groupId, { text: '⛔ Perintah ini hanya untuk admin grup / owner bot.' }, { quoted: msg });
+        await sock.sendMessage(groupId, { text: '❌ Anda tidak memiliki akses untuk perintah ini.' }, { quoted: msg });
         return;
       }
 
       const ctx = { text, groupId, senderId, senderName, location };
 
-      if (/^(tambah|kurang|kali|bagi)$/i.test(text)) {
-        await sock.sendMessage(groupId, {
-          text: ['🧮 FORMAT KALKULATOR', '', 'tambah 10 5', 'kurang 10 5', 'kali 10 5', 'bagi 10 5'].join('\n')
-        }, { quoted: msg });
-        return;
+      const handlers = [
+        () => participants.handleSetHeader(ctx, canAdminManage),
+        () => participants.handleListPeserta(ctx),
+        () => participants.handleNumericDetail(ctx),
+        () => participants.handleAddPeserta(ctx, canAdminManage),
+        () => participants.handleDeletePeserta(ctx, canAdminManage),
+        () => participants.handleUpdatePeserta(ctx, canAdminManage),
+        async () => customCommands.handleSaveCommand({ ...ctx, commandMedia: await extractCommandMedia(msg, text) }, canAdminManage),
+        () => customCommands.handleListCommand(ctx),
+        () => customCommands.handleDetailCommand(ctx),
+        () => customCommands.handleDeleteCommand(ctx, canAdminManage),
+        () => reminder.handleRemind(ctx, canAdminManage),
+        () => reminder.handleListRemind(ctx),
+        () => reminder.handleNoRemind(ctx, canAdminManage),
+        () => todo.handleTodo(ctx, canAdminManage),
+        () => weather.handleSetLocation(ctx, canAdminManage),
+        () => weather.handleWeather(ctx)
+      ];
+
+      for (const fn of handlers) {
+        const res = await fn();
+        if (res) {
+          await sock.sendMessage(groupId, { text: res }, { quoted: msg });
+          return;
+        }
       }
-
-      const setHeader = participants.handleSetHeader(ctx, canAdminManage);
-      if (setHeader) return void await sock.sendMessage(groupId, { text: setHeader }, { quoted: msg });
-
-      const listPeserta = participants.handleListPeserta(ctx);
-      if (listPeserta) return void await sock.sendMessage(groupId, { text: listPeserta }, { quoted: msg });
-
-      const detailPeserta = participants.handleNumericDetail(ctx);
-      if (detailPeserta) return void await sock.sendMessage(groupId, { text: detailPeserta }, { quoted: msg });
-
-      const addPeserta = participants.handleAddPeserta(ctx, canAdminManage);
-      if (addPeserta) return void await sock.sendMessage(groupId, { text: addPeserta }, { quoted: msg });
-
-      const delPeserta = participants.handleDeletePeserta(ctx, canAdminManage);
-      if (delPeserta) return void await sock.sendMessage(groupId, { text: delPeserta }, { quoted: msg });
-
-      const updatePeserta = participants.handleUpdatePeserta(ctx, canAdminManage);
-      if (updatePeserta) return void await sock.sendMessage(groupId, { text: updatePeserta }, { quoted: msg });
-
-      const quotedImageBase64 = /^command\s+/i.test(text) ? await extractQuotedImageBase64(msg) : null;
-      const saveCmd = await customCommands.handleSaveCommand({ ...ctx, quotedImageBase64 }, canAdminManage);
-      if (saveCmd) return void await sock.sendMessage(groupId, { text: saveCmd }, { quoted: msg });
-
-      const listCmd = customCommands.handleListCommand(ctx);
-      if (listCmd) return void await sock.sendMessage(groupId, { text: listCmd }, { quoted: msg });
-
-      const detailCmd = customCommands.handleDetailCommand(ctx);
-      if (detailCmd) return void await sock.sendMessage(groupId, { text: detailCmd }, { quoted: msg });
-
-      const delCmd = customCommands.handleDeleteCommand(ctx, canAdminManage);
-      if (delCmd) return void await sock.sendMessage(groupId, { text: delCmd }, { quoted: msg });
-
-      const rem = reminder.handleRemind(ctx, canAdminManage);
-      if (rem) return void await sock.sendMessage(groupId, { text: rem }, { quoted: msg });
-
-      const listRem = reminder.handleListRemind(ctx);
-      if (listRem) return void await sock.sendMessage(groupId, { text: listRem }, { quoted: msg });
-
-      const noRem = reminder.handleNoRemind(ctx, canAdminManage);
-      if (noRem) return void await sock.sendMessage(groupId, { text: noRem }, { quoted: msg });
-
-      const todoResp = todo.handleTodo(ctx, canAdminManage);
-      if (todoResp) return void await sock.sendMessage(groupId, { text: todoResp }, { quoted: msg });
-
-      const setLoc = await weather.handleSetLocation(ctx, canAdminManage);
-      if (setLoc) return void await sock.sendMessage(groupId, { text: setLoc }, { quoted: msg });
-
-      const weatherResp = await weather.handleWeather(ctx);
-      if (weatherResp) return void await sock.sendMessage(groupId, { text: weatherResp }, { quoted: msg });
 
       if (/^(menu|help)$/i.test(text)) return void await sock.sendMessage(groupId, { text: menuText() }, { quoted: msg });
 
@@ -201,40 +190,31 @@ async function start() {
       if (calc) return void await sock.sendMessage(groupId, { text: calc }, { quoted: msg });
 
       if (/^riwayat(\s|$)/i.test(text) && inCooldown(senderId, 'riwayat', 1000)) {
-        await sock.sendMessage(groupId, { text: '⏳ Tunggu 1 detik sebelum memakai command riwayat lagi.' }, { quoted: msg });
-        return;
+        return void await sock.sendMessage(groupId, { text: '⏳ Tunggu 1 detik sebelum memakai command riwayat lagi.' }, { quoted: msg });
       }
 
       const history = await finance.riwayat(ctx);
       if (history) return void await sock.sendMessage(groupId, { text: history }, { quoted: msg });
-
       const saldo = await finance.saldo(ctx);
       if (saldo) return void await sock.sendMessage(groupId, { text: saldo }, { quoted: msg });
-
       const edit = await finance.edit(ctx, canAdminManage);
       if (edit) return void await sock.sendMessage(groupId, { text: edit }, { quoted: msg });
-
       const del = await finance.remove(ctx, canAdminManage);
       if (del) return void await sock.sendMessage(groupId, { text: del }, { quoted: msg });
-
       const detail = await finance.detail(ctx);
       if (detail) return void await sock.sendMessage(groupId, { text: detail }, { quoted: msg });
-
       const tx = await finance.recordTransaction(ctx);
       if (tx) return void await sock.sendMessage(groupId, { text: tx }, { quoted: msg });
 
       const autoResp = isGroupMessage ? customCommands.handleAutoResponse(ctx) : null;
-      if (autoResp?.type === 'image') {
-        await sock.sendMessage(groupId, { image: autoResp.imageBuffer, caption: autoResp.caption }, { quoted: msg });
-        return;
-      }
-      if (autoResp?.type === 'text') {
-        await sock.sendMessage(groupId, { text: autoResp.text }, { quoted: msg });
-        return;
-      }
+      if (autoResp?.type === 'image') return void await sock.sendMessage(groupId, { image: autoResp.imageBuffer, caption: autoResp.caption }, { quoted: msg });
+      if (autoResp?.type === 'text') return void await sock.sendMessage(groupId, { text: autoResp.text }, { quoted: msg });
 
-      if (/^[+-]/.test(text)) {
-        await sock.sendMessage(groupId, { text: 'Format transaksi salah. Contoh:\n+ 15000 (Donasi Pak RT)\n- 12000 (Beli air mineral)' }, { quoted: msg });
+      const suggest = suggestCommand(text, COMMAND_CANDIDATES);
+      if (suggest) {
+        await sock.sendMessage(groupId, { text: `❓ Perintah tidak ditemukan.\n\nApakah maksud Anda: ${suggest}\nKetik perintah yang benar untuk melanjutkan.` }, { quoted: msg });
+      } else if (/^[a-z#]/i.test(text)) {
+        await sock.sendMessage(groupId, { text: '❌ Perintah tidak dikenali.\nKetik help untuk melihat daftar perintah.' }, { quoted: msg });
       }
     } catch (err) {
       console.error(err);
