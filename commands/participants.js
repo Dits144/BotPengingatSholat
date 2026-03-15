@@ -5,26 +5,48 @@ const { TIMEZONE } = require('../config');
 const PAGE_SIZE = 14;
 const lastParticipantList = new Map();
 
+const DEFAULT_HEADER = [
+  'PESERTA',
+  'KEGIATAN OPENTRIP',
+  'NAMA KEGIATAN',
+  '',
+  '🗓️ Tanggal: -',
+  '⏰ Durasi: -',
+  '📍 Meeting Point: -'
+].join('\n');
+
+function nowIso() {
+  return DateTime.now().setZone(TIMEZONE).toISO();
+}
+
 function cacheKey(groupId, senderId) {
   return `${groupId}::${senderId}`;
 }
 
-function templateHeader() {
-  return [
-    'PESERTA',
-    'ONE DAY TRIP',
-    'MOUNT PAPANDAYAN',
-    '',
-    '🗓️ Tanggal: 28 Maret 2026',
-    '⏰ Durasi: 1 Hari (PP)',
-    '📍 Meeting Point: Kab.Bogor',
-    '',
-    'List of names:'
-  ];
+function getHeader(groupId) {
+  const row = db.prepare('SELECT participant_header FROM group_settings WHERE group_id=?').get(groupId);
+  return row?.participant_header || DEFAULT_HEADER;
 }
 
-function nowIso() {
-  return DateTime.now().setZone(TIMEZONE).toISO();
+function setHeader(groupId, text) {
+  db.prepare(`
+    INSERT INTO group_settings (group_id, participant_header, updated_at)
+    VALUES (?, ?, ?)
+    ON CONFLICT(group_id) DO UPDATE SET
+      participant_header=excluded.participant_header,
+      updated_at=excluded.updated_at
+  `).run(groupId, text, nowIso());
+}
+
+function handleSetHeader(ctx, canManage) {
+  if (!/^setheader@/i.test(ctx.text.trim())) return null;
+  if (!canManage) return '⛔ Hanya admin grup atau owner bot yang boleh setheader.';
+
+  const value = ctx.text.trim().replace(/^setheader@/i, '').trim();
+  if (!value) return 'Format salah. Contoh: setheader@PESERTA\nWISATA CURUG\n...';
+
+  setHeader(ctx.groupId, value);
+  return '✅ Header list peserta berhasil diupdate.';
 }
 
 function handleListPeserta(ctx) {
@@ -35,8 +57,10 @@ function handleListPeserta(ctx) {
   const offset = (page - 1) * PAGE_SIZE;
 
   const total = db.prepare('SELECT COUNT(*) as total FROM participants WHERE group_id=? AND deleted_at IS NULL').get(ctx.groupId).total;
+  const header = getHeader(ctx.groupId);
+
   if (!total) {
-    return [...templateHeader(), '- Belum ada peserta.'].join('\n');
+    return `${header}\n\nList of names:\n- Belum ada peserta.`;
   }
 
   const rows = db.prepare(`
@@ -54,40 +78,27 @@ function handleListPeserta(ctx) {
   const lines = rows.map((r, idx) => `${startNo + idx}) ${r.name}`);
 
   const pageCount = Math.ceil(total / PAGE_SIZE);
-  const suffix = [
-    '',
-    'Ketik nomor untuk lihat data peserta.'
-  ];
-  if (page < pageCount) {
-    suffix.push(`Ketik listpeserta ${page + 1} untuk halaman ${page + 1}.`);
-  }
+  const footer = ['','Ketik nomor untuk lihat data peserta.'];
+  if (page < pageCount) footer.push(`Ketik listpeserta ${page + 1} untuk halaman ${page + 1}.`);
 
-  return [...templateHeader(), ...lines, ...suffix].join('\n');
+  return [header, '', 'List of names:', ...lines, ...footer].join('\n');
 }
 
 function resolveIdFromCache(ctx, no) {
   const ids = lastParticipantList.get(cacheKey(ctx.groupId, ctx.senderId)) || [];
-  const idx = no - 1;
-  return ids[idx] || null;
+  return ids[no - 1] || null;
 }
 
 function handleNumericDetail(ctx) {
   if (!/^\d+$/.test(ctx.text.trim())) return null;
   const no = Number.parseInt(ctx.text.trim(), 10);
-  if (no <= 0) return null;
-
   const id = resolveIdFromCache(ctx, no);
   if (!id) return null;
 
   const row = db.prepare('SELECT * FROM participants WHERE id=? AND deleted_at IS NULL').get(id);
   if (!row) return 'Peserta tidak ditemukan / sudah dihapus.';
 
-  return [
-    `👤 DETAIL PESERTA #${no}`,
-    `Nama: ${row.name}`,
-    'Data:',
-    row.data
-  ].join('\n');
+  return [`👤 DETAIL PESERTA #${no}`, `Nama: ${row.name}`, 'Data:', row.data].join('\n');
 }
 
 function handleAddPeserta(ctx, canManage) {
@@ -102,24 +113,13 @@ function handleAddPeserta(ctx, canManage) {
 
   const name = raw.slice(0, atIndex).trim();
   const data = raw.slice(atIndex + 1).trim();
-  if (!name || !data) {
-    return 'Nama dan data wajib diisi. Contoh: addpeserta Raditya@(No HP: 08xxx | Alamat: ... | Info: ...)';
-  }
+  if (!name || !data) return 'Nama dan data wajib diisi.';
 
   const now = nowIso();
-  const result = db.prepare(`
-    INSERT INTO participants (group_id, name, data, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?)
-  `).run(ctx.groupId, name, data, now, now);
-
+  db.prepare(`INSERT INTO participants (group_id, name, data, created_at, updated_at) VALUES (?, ?, ?, ?, ?)`).run(ctx.groupId, name, data, now, now);
   const position = db.prepare('SELECT COUNT(*) as total FROM participants WHERE group_id=? AND deleted_at IS NULL').get(ctx.groupId).total;
 
-  return [
-    '✅ Peserta ditambahkan',
-    `Nama: ${name}`,
-    `No urut: ${position}`,
-    `ID: ${result.lastInsertRowid}`
-  ].join('\n');
+  return ['✅ Peserta ditambahkan', `Nama: ${name}`, `No urut: ${position}`].join('\n');
 }
 
 function handleDeletePeserta(ctx, canManage) {
@@ -131,9 +131,9 @@ function handleDeletePeserta(ctx, canManage) {
   const id = resolveIdFromCache(ctx, no);
   if (!id) return 'Nomor peserta tidak ditemukan. Jalankan listpeserta dulu.';
 
-  const updated = db.prepare('UPDATE participants SET deleted_at=?, updated_at=? WHERE id=? AND deleted_at IS NULL').run(nowIso(), nowIso(), id);
+  const now = nowIso();
+  const updated = db.prepare('UPDATE participants SET deleted_at=?, updated_at=? WHERE id=? AND deleted_at IS NULL').run(now, now, id);
   if (!updated.changes) return 'Peserta tidak ditemukan / sudah dihapus.';
-
   return `🗑️ Peserta #${no} berhasil dihapus`;
 }
 
@@ -143,9 +143,7 @@ function handleUpdatePeserta(ctx, canManage) {
   if (!canManage) return '⛔ Hanya admin grup atau owner bot yang boleh updatepeserta.';
 
   const m = raw.match(/^updatepeserta\s+no\s+(\d+)@([\s\S]+)$/i);
-  if (!m) {
-    return 'Format salah. Contoh: updatepeserta no 4@(No HP: ... | Update data ...)';
-  }
+  if (!m) return 'Format salah. Contoh: updatepeserta no 4@(No HP: ... | Update data ...)';
 
   const no = Number.parseInt(m[1], 10);
   const newData = m[2].trim();
@@ -156,11 +154,11 @@ function handleUpdatePeserta(ctx, canManage) {
 
   const updated = db.prepare('UPDATE participants SET data=?, updated_at=? WHERE id=? AND deleted_at IS NULL').run(newData, nowIso(), id);
   if (!updated.changes) return 'Peserta tidak ditemukan / sudah dihapus.';
-
   return `✏️ Peserta #${no} berhasil diupdate`;
 }
 
 module.exports = {
+  handleSetHeader,
   handleListPeserta,
   handleNumericDetail,
   handleAddPeserta,

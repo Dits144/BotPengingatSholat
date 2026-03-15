@@ -32,7 +32,6 @@ CREATE TABLE IF NOT EXISTS group_rentals (
   last_warned_at TEXT
 );
 
-
 CREATE TABLE IF NOT EXISTS bot_owners (
   user_number TEXT PRIMARY KEY,
   user_jid TEXT,
@@ -65,6 +64,38 @@ CREATE TABLE IF NOT EXISTS custom_commands (
 CREATE UNIQUE INDEX IF NOT EXISTS idx_custom_commands_unique
 ON custom_commands(group_id, keyword);
 
+CREATE TABLE IF NOT EXISTS group_settings (
+  group_id TEXT PRIMARY KEY,
+  participant_header TEXT,
+  weather_location TEXT,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS reminders (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  group_id TEXT NOT NULL,
+  remind_type TEXT NOT NULL,
+  remind_value TEXT NOT NULL,
+  remind_text TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  deleted_at TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_reminders_group_created
+ON reminders(group_id, created_at ASC);
+
+CREATE TABLE IF NOT EXISTS todos (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  group_id TEXT NOT NULL,
+  todo_text TEXT NOT NULL,
+  is_done INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  deleted_at TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_todos_group_created
+ON todos(group_id, created_at ASC);
 `);
 
 function nowWibIso() {
@@ -87,10 +118,7 @@ function updateTransaction(payload) {
 }
 
 function softDeleteTransaction(id) {
-  return db.prepare(`
-    UPDATE transactions SET deleted_at=?
-    WHERE id=? AND deleted_at IS NULL
-  `).run(nowWibIso(), id);
+  return db.prepare(`UPDATE transactions SET deleted_at=? WHERE id=? AND deleted_at IS NULL`).run(nowWibIso(), id);
 }
 
 function getRental(groupId) {
@@ -109,11 +137,9 @@ function extendRental(groupId, days, updatedBy) {
   const start = !current || !current.expire_at || DateTime.fromISO(current.expire_at, { zone: TIMEZONE }) <= now
     ? now
     : DateTime.fromISO(current.start_at || now.toISO(), { zone: TIMEZONE });
-
   const baseExpire = current?.expire_at && DateTime.fromISO(current.expire_at, { zone: TIMEZONE }) > now
     ? DateTime.fromISO(current.expire_at, { zone: TIMEZONE })
     : now;
-
   const expireAt = baseExpire.plus({ days }).set({ hour: 23, minute: 59, second: 0, millisecond: 0 });
 
   db.prepare(`
@@ -146,7 +172,6 @@ function markWarned(groupId) {
   db.prepare('UPDATE group_rentals SET last_warned_at=? WHERE group_id=?').run(nowWibIso(), groupId);
 }
 
-
 function addOwner(userNumber, userJid) {
   const now = nowWibIso();
   db.prepare(`
@@ -162,7 +187,6 @@ function getOwnerNumbers() {
   const rows = db.prepare('SELECT user_number FROM bot_owners').all();
   return rows.map((r) => r.user_number);
 }
-
 
 module.exports = {
   db,

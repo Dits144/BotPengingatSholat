@@ -9,6 +9,9 @@ const { handleCalc } = require('./commands/calc');
 const finance = require('./commands/finance');
 const participants = require('./commands/participants');
 const customCommands = require('./commands/customCommands');
+const reminder = require('./commands/reminder');
+const todo = require('./commands/todo');
+const weather = require('./commands/weather');
 const { handleOwnerCommand } = require('./commands/owner');
 const { infoGroup } = require('./commands/info');
 const { isRentalActive, lockedMessage, shouldWarnExpiring } = require('./commands/rental');
@@ -27,8 +30,7 @@ function isAdmin(participantsMeta, senderId) {
 }
 
 function isSenderOwner(senderJid) {
-  const dynamicOwnerNumbers = getOwnerNumbers();
-  const ownerPool = [...OWNER_NUMBERS, ...dynamicOwnerNumbers];
+  const ownerPool = [...OWNER_NUMBERS, ...getOwnerNumbers()];
   return isOwner(senderJid, ownerPool);
 }
 
@@ -45,12 +47,7 @@ async function start() {
   const { state, saveCreds } = await useMultiFileAuthState(AUTH_DIR);
   const { version } = await fetchLatestBaileysVersion();
 
-  const sock = makeWASocket({
-    version,
-    auth: state,
-    printQRInTerminal: true,
-    logger: pino({ level: LOG_LEVEL })
-  });
+  const sock = makeWASocket({ version, auth: state, printQRInTerminal: true, logger: pino({ level: LOG_LEVEL }) });
 
   sock.ev.on('creds.update', saveCreds);
   sock.ev.on('connection.update', ({ connection, lastDisconnect, qr }) => {
@@ -81,6 +78,8 @@ async function start() {
     const senderName = msg.pushName || 'Tanpa Nama';
 
     try {
+      const senderIsOwner = isSenderOwner(senderId);
+
       if (isGroupMessage) {
         const warning = shouldWarnExpiring(groupId);
         if (warning) await sock.sendMessage(groupId, { text: warning });
@@ -92,21 +91,13 @@ async function start() {
           await sock.sendMessage(groupId, { text: 'Gagal klaim owner: nomor pengirim tidak valid.' }, { quoted: msg });
           return;
         }
-
         addOwner(senderNumber, senderId);
-        await sock.sendMessage(groupId, {
-          text: `✅ Owner berhasil diklaim.\nNomor: ${senderNumber}\nSekarang kamu bisa pakai command owner (#).`
-        }, { quoted: msg });
+        await sock.sendMessage(groupId, { text: `✅ Owner berhasil diklaim.\nNomor: ${senderNumber}` }, { quoted: msg });
         return;
       }
 
       if (/^#/.test(text)) {
-        if (process.env.DEBUG_JID === '1') {
-          console.log('SENDER RAW:', getSenderJid(msg));
-          console.log('SENDER NORMALIZED:', senderId);
-        }
-
-        if (!isSenderOwner(senderId)) {
+        if (!senderIsOwner) {
           await sock.sendMessage(groupId, { text: '❌ Perintah ini hanya untuk OWNER bot.' }, { quoted: msg });
           return;
         }
@@ -114,6 +105,87 @@ async function start() {
         await sock.sendMessage(groupId, { text: resp }, { quoted: msg });
         return;
       }
+
+      // Semua command grup non-owner wajib sewa aktif
+      if (isGroupMessage && !isRentalActive(groupId)) {
+        await sock.sendMessage(groupId, { text: lockedMessage() }, { quoted: msg });
+        return;
+      }
+
+      let senderIsAdmin = false;
+      if (isGroupMessage) {
+        const meta = await sock.groupMetadata(groupId);
+        senderIsAdmin = isAdmin(meta.participants, senderId);
+      }
+      const canAdminManage = senderIsOwner || senderIsAdmin;
+
+      const userAllowed = /^listpeserta(?:\s+\d+)?$/i.test(text)
+        || /^\d+$/.test(text)
+        || /^riwayat(\s+.*)?$/i.test(text)
+        || /^(tambah|kurang|kali|bagi)(\s|$)/i.test(text)
+        || /^weather$/i.test(text);
+
+      const adminCommands = /^(menu|help|info|[+-]|saldo(\s|$)|edit\s+\d+|hapus\s+\d+|detail\s+\d+|addpeserta\s+|delpeserta\s+no\s+\d+|updatepeserta\s+no\s+\d+|setheader@|command\s+|delcommand\s+|listcommand$|detailcommand\s+|remind\s+|listremind$|noremind\s+|todo\s+|todolist$|doto\s+\d+|lokweather\s+)/i.test(text);
+
+      if (!canAdminManage && adminCommands && !userAllowed) {
+        await sock.sendMessage(groupId, { text: '⛔ Perintah ini hanya untuk admin grup / owner bot.' }, { quoted: msg });
+        return;
+      }
+
+      const ctx = { text, groupId, senderId, senderName };
+
+      if (/^tambah$/i.test(text)) {
+        await sock.sendMessage(groupId, { text: 'Format kalkulator: tambah 100 50' }, { quoted: msg });
+        return;
+      }
+
+      const listPeserta = participants.handleListPeserta(ctx);
+      if (listPeserta) return void await sock.sendMessage(groupId, { text: listPeserta }, { quoted: msg });
+
+      const detailPeserta = participants.handleNumericDetail(ctx);
+      if (detailPeserta) return void await sock.sendMessage(groupId, { text: detailPeserta }, { quoted: msg });
+
+      const addPeserta = participants.handleAddPeserta(ctx, canAdminManage);
+      if (addPeserta) return void await sock.sendMessage(groupId, { text: addPeserta }, { quoted: msg });
+
+      const delPeserta = participants.handleDeletePeserta(ctx, canAdminManage);
+      if (delPeserta) return void await sock.sendMessage(groupId, { text: delPeserta }, { quoted: msg });
+
+      const updatePeserta = participants.handleUpdatePeserta(ctx, canAdminManage);
+      if (updatePeserta) return void await sock.sendMessage(groupId, { text: updatePeserta }, { quoted: msg });
+
+      const setHeader = participants.handleSetHeader(ctx, canAdminManage);
+      if (setHeader) return void await sock.sendMessage(groupId, { text: setHeader }, { quoted: msg });
+
+      const saveCmd = customCommands.handleSaveCommand(ctx, canAdminManage);
+      if (saveCmd) return void await sock.sendMessage(groupId, { text: saveCmd }, { quoted: msg });
+
+      const listCmd = customCommands.handleListCommand(ctx);
+      if (listCmd) return void await sock.sendMessage(groupId, { text: listCmd }, { quoted: msg });
+
+      const detailCmd = customCommands.handleDetailCommand(ctx);
+      if (detailCmd) return void await sock.sendMessage(groupId, { text: detailCmd }, { quoted: msg });
+
+      const delCmd = customCommands.handleDeleteCommand(ctx, canAdminManage);
+      if (delCmd) return void await sock.sendMessage(groupId, { text: delCmd }, { quoted: msg });
+
+      const rem = reminder.handleRemind(ctx, canAdminManage);
+      if (rem) return void await sock.sendMessage(groupId, { text: rem }, { quoted: msg });
+
+      const listRem = reminder.handleListRemind(ctx);
+      if (listRem) return void await sock.sendMessage(groupId, { text: listRem }, { quoted: msg });
+
+      const noRem = reminder.handleNoRemind(ctx, canAdminManage);
+      if (noRem) return void await sock.sendMessage(groupId, { text: noRem }, { quoted: msg });
+
+      const todoResp = todo.handleTodo(ctx, canAdminManage);
+      if (todoResp) return void await sock.sendMessage(groupId, { text: todoResp }, { quoted: msg });
+
+      const setLoc = await weather.handleSetLocation(ctx, canAdminManage);
+      if (setLoc) return void await sock.sendMessage(groupId, { text: setLoc }, { quoted: msg });
+
+      const weatherResp = await weather.handleWeather(ctx);
+      if (weatherResp) return void await sock.sendMessage(groupId, { text: weatherResp }, { quoted: msg });
 
       if (/^(menu|help)$/i.test(text)) {
         await sock.sendMessage(groupId, { text: menuText() }, { quoted: msg });
@@ -127,83 +199,7 @@ async function start() {
       }
 
       const calc = handleCalc(text);
-      if (calc) {
-        await sock.sendMessage(groupId, { text: calc }, { quoted: msg });
-        return;
-      }
-
-      const senderIsOwner = isSenderOwner(senderId);
-      const needsAdminCheck = /^(addpeserta\s+|delpeserta\s+no\s+\d+|updatepeserta\s+no\s+\d+|command\s+|delcommand\s+)/i.test(text);
-      let senderIsAdmin = false;
-      if (isGroupMessage && needsAdminCheck && !senderIsOwner) {
-        const meta = await sock.groupMetadata(groupId);
-        senderIsAdmin = isAdmin(meta.participants, senderId);
-      }
-      const canManage = senderIsOwner || senderIsAdmin;
-
-      const participantCtx = { text, groupId, senderId, senderName };
-
-      const listPeserta = participants.handleListPeserta(participantCtx);
-      if (listPeserta) {
-        await sock.sendMessage(groupId, { text: listPeserta }, { quoted: msg });
-        return;
-      }
-
-      const addPeserta = participants.handleAddPeserta(participantCtx, canManage);
-      if (addPeserta) {
-        await sock.sendMessage(groupId, { text: addPeserta }, { quoted: msg });
-        return;
-      }
-
-      const delPeserta = participants.handleDeletePeserta(participantCtx, canManage);
-      if (delPeserta) {
-        await sock.sendMessage(groupId, { text: delPeserta }, { quoted: msg });
-        return;
-      }
-
-      const updPeserta = participants.handleUpdatePeserta(participantCtx, canManage);
-      if (updPeserta) {
-        await sock.sendMessage(groupId, { text: updPeserta }, { quoted: msg });
-        return;
-      }
-
-      const detailPeserta = participants.handleNumericDetail(participantCtx);
-      if (detailPeserta) {
-        await sock.sendMessage(groupId, { text: detailPeserta }, { quoted: msg });
-        return;
-      }
-
-      const saveCommand = customCommands.handleSaveCommand(participantCtx, canManage);
-      if (saveCommand) {
-        await sock.sendMessage(groupId, { text: saveCommand }, { quoted: msg });
-        return;
-      }
-
-      const listCommand = customCommands.handleListCommand(participantCtx);
-      if (listCommand) {
-        await sock.sendMessage(groupId, { text: listCommand }, { quoted: msg });
-        return;
-      }
-
-      const detailCommand = customCommands.handleDetailCommand(participantCtx);
-      if (detailCommand) {
-        await sock.sendMessage(groupId, { text: detailCommand }, { quoted: msg });
-        return;
-      }
-
-      const delCommand = customCommands.handleDeleteCommand(participantCtx, canManage);
-      if (delCommand) {
-        await sock.sendMessage(groupId, { text: delCommand }, { quoted: msg });
-        return;
-      }
-
-      const isFinanceCommand = /^([+-]|riwayat|edit\s+\d+|hapus\s+\d+|detail\s+\d+|saldo(\s|$))/i.test(text);
-      if (isFinanceCommand && isGroupMessage && !isRentalActive(groupId)) {
-        await sock.sendMessage(groupId, { text: lockedMessage() }, { quoted: msg });
-        return;
-      }
-
-      const ctx = { text, groupId, senderId, senderName };
+      if (calc) return void await sock.sendMessage(groupId, { text: calc }, { quoted: msg });
 
       if (/^riwayat(\s|$)/i.test(text) && inCooldown(senderId, 'riwayat', 1000)) {
         await sock.sendMessage(groupId, { text: '⏳ Tunggu 1 detik sebelum memakai command riwayat lagi.' }, { quoted: msg });
@@ -211,52 +207,25 @@ async function start() {
       }
 
       const history = await finance.riwayat(ctx);
-      if (history) {
-        await sock.sendMessage(groupId, { text: history }, { quoted: msg });
-        return;
-      }
+      if (history) return void await sock.sendMessage(groupId, { text: history }, { quoted: msg });
 
-      const summary = await finance.saldo(ctx);
-      if (summary) {
-        await sock.sendMessage(groupId, { text: summary }, { quoted: msg });
-        return;
-      }
+      const saldo = await finance.saldo(ctx);
+      if (saldo) return void await sock.sendMessage(groupId, { text: saldo }, { quoted: msg });
 
-      let admin = false;
-      if (isGroupMessage && /^(edit\s+\d+|hapus\s+\d+)/i.test(text)) {
-        const meta = await sock.groupMetadata(groupId);
-        admin = isAdmin(meta.participants, senderId);
-      }
+      const edit = await finance.edit(ctx, canAdminManage);
+      if (edit) return void await sock.sendMessage(groupId, { text: edit }, { quoted: msg });
 
-      const edit = await finance.edit(ctx, admin || senderIsOwner);
-      if (edit) {
-        await sock.sendMessage(groupId, { text: edit }, { quoted: msg });
-        return;
-      }
-
-      const del = await finance.remove(ctx, admin || senderIsOwner);
-      if (del) {
-        await sock.sendMessage(groupId, { text: del }, { quoted: msg });
-        return;
-      }
+      const del = await finance.remove(ctx, canAdminManage);
+      if (del) return void await sock.sendMessage(groupId, { text: del }, { quoted: msg });
 
       const detail = await finance.detail(ctx);
-      if (detail) {
-        await sock.sendMessage(groupId, { text: detail }, { quoted: msg });
-        return;
-      }
+      if (detail) return void await sock.sendMessage(groupId, { text: detail }, { quoted: msg });
 
       const tx = await finance.recordTransaction(ctx);
-      if (tx) {
-        await sock.sendMessage(groupId, { text: tx }, { quoted: msg });
-        return;
-      }
+      if (tx) return void await sock.sendMessage(groupId, { text: tx }, { quoted: msg });
 
       const autoResp = isGroupMessage ? customCommands.handleAutoResponse(ctx) : null;
-      if (autoResp) {
-        await sock.sendMessage(groupId, { text: autoResp }, { quoted: msg });
-        return;
-      }
+      if (autoResp) return void await sock.sendMessage(groupId, { text: autoResp }, { quoted: msg });
 
       if (/^[+-]/.test(text)) {
         await sock.sendMessage(groupId, { text: 'Format transaksi salah. Contoh:\n+ 15000 (Donasi Pak RT)\n- 12000 (Beli air mineral)' }, { quoted: msg });
