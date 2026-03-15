@@ -162,4 +162,11 @@ function handleUpdatePeserta(ctx, canManage) {
   return `✏️ Peserta #${no} berhasil diupdate`;
 }
 
-module.exports = { handleSetHeader, handleListPeserta, handleNumericDetail, handleAddPeserta, handleDeletePeserta, handleUpdatePeserta };
+
+function clearGroupCache(groupId) {
+  for (const k of lastParticipantList.keys()) {
+    if (k.startsWith(`${groupId}::`)) lastParticipantList.delete(k);
+  }
+}
+
+module.exports = { handleSetHeader, handleListPeserta, handleNumericDetail, handleAddPeserta, handleDeletePeserta, handleUpdatePeserta, clearGroupCache };

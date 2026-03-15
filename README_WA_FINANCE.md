@@ -1,77 +1,103 @@
-# WhatsApp Bot Keuangan Kegiatan (Baileys + SQLite)
+# WhatsApp Bot Keuangan Kegiatan (Update Stabilitas)
 
 ## Update struktur file
 
-- `index.js` (router utama + role + gate sewa + typo suggestion)
-- `commands/help.js`
-- `commands/owner.js` (`#broadcast`)
-- `commands/customCommands.js` (support foto)
-- `commands/reminder.js` (scheduler reminder)
-- `commands/rental.js` (H-1 sewa)
-- `commands/participants.js` (setheader dinamis)
-- `commands/todo.js`
-- `commands/weather.js`
-- `db/database.js` (schema update)
-- `utils/typo.js` (suggest command typo)
+- `index.js` (routing utama + role + gate sewa + typo)
+- `commands/finance.js` (helper format riwayat/transaksi + cache history)
+- `commands/adminTools.js` (**baru**, clearall per grup)
+- `commands/owner.js` (tambah `#health` + `#broadcast`)
+- `commands/help.js` (menu rapi per role)
+- `commands/customCommands.js` (foto + caption)
+- `commands/participants.js` (cache clear helper)
+- `commands/todo.js` (cache clear helper)
+- `db/database.js` (schema media/reminder/sewa)
 
-## Schema DB utama (baru/diupdate)
+## Logic handler baru
 
-- `custom_commands`: tambah `media_type`, `media_path`, `caption_text`
-- `group_rentals`: tambah `last_h1_warning_at`
-- `group_settings`: pakai `header_text`, `weather_location`
-- `reminders`: tambah `created_by`
-- `reminder_dispatch`: anti duplikat reminder scheduler
+### 1) `clearall` (admin grup / owner)
+- `clearall` → minta konfirmasi
+- `clearall yes` → reset semua data khusus grup:
+  - transaksi
+  - peserta
+  - custom command
+  - todo
+  - reminder
+  - group settings (header/weather)
+  - cache riwayat/peserta/todo
+- Tidak menghapus:
+  - data sewa grup
+  - data owner
+  - data global bot
 
-## Logic inti
+### 2) `#health` (owner only)
+Menampilkan:
+- status bot
+- CPU
+- RAM
+- uptime
+- server time WIB
+- status aman/waspada/tinggi
 
-### 1) Silent rental gate
-Jika grup tidak aktif sewa, bot akan diam untuk semua command biasa.
+### 3) helper format riwayat
+`finance.formatRiwayatHelp()` untuk output vertikal rapi.
 
-Pengecualian saat belum aktif sewa (khusus owner):
-- #infogroup
-- #aktif
+### 4) helper format transaksi
+`finance.formatTransactionHelp()` dipakai saat user kirim `+`, `-`, atau `inputtransaksi`.
 
-### 2) Owner command yang tetap jalan
-- `#infogroup`
-- `#aktif`
-- `#nonaktif`
-- `#statussewa`
-- `#broadcast`
+### 5) typo suggestion
+Pakai Levenshtein (`utils/typo.js`) untuk saran command terdekat.
 
-Catatan: jika grup belum aktif sewa, owner hanya bisa pakai `#infogroup` dan `#aktif`.
+### 6) custom command foto
+- Simpan media ke `media/commands`
+- Simpan `media_path`, `media_type`, `caption_text`
+- Trigger keyword kirim foto + caption jika ada media
 
-### 3) Typo suggestion
-Jika command typo tapi mirip (Levenshtein), bot memberi saran command paling dekat.
+## Contoh balasan bot
 
-### 4) Broadcast owner
-`#broadcast@(pesan)` mengirim ke seluruh group_id pada tabel rental.
+### clearall
+`clearall` →
+```txt
+⚠️ Yakin ingin menghapus semua data grup ini?
 
-### 5) Reminder H-1 sewa habis
-Jika sisa 1 hari, kirim peringatan 1x per grup (pakai `last_h1_warning_at`).
-
-### 6) Custom command foto
-Jika `command KEYWORD@(text)` dibuat sambil kirim/reply foto:
-- media didownload ke folder lokal `media/commands`
-- path disimpan di DB
-- saat keyword dipanggil, bot kirim foto + caption
-
-## Contoh pemakaian
-
-- `help`
-- `setheader@PESERTA\nOPEN TRIP PAPANDAYAN\nTanggal: 28 Maret 2026`
-- `addpeserta Radit@(No HP: 08xxx | Kota: Bogor)`
-- `command TERIMAKASIH@thank you sudah order di DitsStore` (sambil foto)
-- `terimakasih` (trigger kirim foto+caption)
-- `remind 05:00@bangun sholat subuh`
-- `todo tambah revisi skripsi`
-- `doto 1`
-- `weather`
-- `lokweather Bogor`
-- `#broadcast@Assalamualaikum, maintenance malam ini pukul 23.00 WIB.`
-
-## Cara run
-
-```bash
-npm install
-npm start
+Ketik:
+clearall yes
+untuk melanjutkan.
 ```
+
+`clearall yes` →
+```txt
+✅ Semua data grup berhasil direset.
+
+Database grup ini sudah dimulai dari awal.
+```
+
+### #health
+```txt
+🩺 HEALTH BOT
+
+🤖 Status: Online
+🖥 CPU: 27%
+📦 RAM: 312 MB / 2 GB
+⏱ Uptime: 5 jam 12 menit
+🕒 Server Time: 18-02-2026 06:30 WIB
+
+✅ Kondisi server aman
+```
+
+### riwayat format
+```txt
+📒 FORMAT RIWAYAT
+...
+```
+
+### transaksi format
+```txt
+💰 FORMAT INPUT TRANSAKSI
+...
+```
+
+## Help (rapi)
+- USER
+- ADMIN GROUP
+- OWNER BOT
+sudah dipisah vertikal dan mudah dibaca di WhatsApp.

@@ -18,12 +18,13 @@ const weather = require('./commands/weather');
 const { handleOwnerCommand } = require('./commands/owner');
 const { isRentalActive, shouldWarnExpiring } = require('./commands/rental');
 const { suggestCommand } = require('./utils/typo');
+const { handleClearAll } = require('./commands/adminTools');
 
 const cooldown = new Map();
 const COMMAND_CANDIDATES = [
   'help', 'menu', 'listpeserta', 'riwayat', 'saldo', 'tambah', 'kurang', 'kali', 'bagi', 'weather', 'cuaca', 'todolist',
   'addpeserta', 'updatepeserta', 'delpeserta', 'setheader', 'command', 'listcommand', 'detailcommand', 'delcommand',
-  'remind', 'listremind', 'noremind', 'todo', 'doto', 'lokweather'
+  'remind', 'listremind', 'noremind', 'todo', 'doto', 'lokweather', 'clearall', 'inputtransaksi'
 ];
 
 function getText(msg) {
@@ -40,7 +41,6 @@ function isAdmin(participantsMeta, senderId) {
 function isSenderOwner(senderJid) {
   return isOwner(senderJid, [...OWNER_NUMBERS, ...getOwnerNumbers()]);
 }
-
 
 function isAllowedWhenInactive(text) {
   const cmd = String(text || '').trim().toLowerCase();
@@ -131,17 +131,13 @@ async function start() {
       }
 
       if (/^#/.test(text)) {
-        if (!senderIsOwner) return; // silent for non-owner
-
-        // jika grup belum aktif sewa, hanya #infogroup dan #aktif yang boleh dipakai
+        if (!senderIsOwner) return;
         if (isGroupMessage && !isRentalActive(groupId) && !isAllowedWhenInactive(text)) return;
-
         const resp = await handleOwnerCommand({ sock, text, groupId, isGroupMessage });
         if (resp) await sock.sendMessage(groupId, { text: resp }, { quoted: msg });
         return;
       }
 
-      // silent mode rental gate untuk command non-owner/non-#
       if (isGroupMessage && !isRentalActive(groupId)) return;
 
       let senderIsAdmin = false;
@@ -159,13 +155,24 @@ async function start() {
         || /^todolist$/i.test(text)
         || /^todo\s+lihat$/i.test(text);
 
-      const adminCommands = /^(menu|help|[+-]|saldo(\s|$)|edit\s+\d+|hapus\s+\d+|detail\s+\d+|addpeserta\s*|delpeserta\s*|updatepeserta\s*|setheader\s*|command\s*|delcommand\s*|listcommand$|detailcommand\s+|remind\s*|listremind$|noremind\s*|todo\s*|doto\s*|lokweather\s*)/i.test(text);
+      const adminCommands = /^(menu|help|[+-]|inputtransaksi|saldo(\s|$)|edit\s+\d+|hapus\s+\d+|detail\s+\d+|addpeserta\s*|delpeserta\s*|updatepeserta\s*|setheader\s*|command\s*|delcommand\s*|listcommand$|detailcommand\s+|remind\s*|listremind$|noremind\s*|todo\s*|doto\s*|lokweather\s*|clearall\s*)/i.test(text);
       if (!canAdminManage && adminCommands && !userAllowed) {
         await sock.sendMessage(groupId, { text: '❌ Anda tidak memiliki akses untuk perintah ini.' }, { quoted: msg });
         return;
       }
 
       const ctx = { text, groupId, senderId, senderName, location };
+
+      if (/^(\+|-|inputtransaksi)$/i.test(text)) {
+        await sock.sendMessage(groupId, { text: finance.formatTransactionHelp() }, { quoted: msg });
+        return;
+      }
+
+      const clearRes = handleClearAll(ctx, canAdminManage, [finance.clearGroupCache, participants.clearGroupCache, todo.clearGroupCache]);
+      if (clearRes) {
+        await sock.sendMessage(groupId, { text: clearRes }, { quoted: msg });
+        return;
+      }
 
       const handlers = [
         () => participants.handleSetHeader(ctx, canAdminManage),
@@ -199,6 +206,8 @@ async function start() {
       const calc = handleCalc(text);
       if (calc) return void await sock.sendMessage(groupId, { text: calc }, { quoted: msg });
 
+      if (/^riwayat\s+format$/i.test(text)) return void await sock.sendMessage(groupId, { text: finance.formatRiwayatHelp() }, { quoted: msg });
+
       if (/^riwayat(\s|$)/i.test(text) && inCooldown(senderId, 'riwayat', 1000)) {
         return void await sock.sendMessage(groupId, { text: '⏳ Tunggu 1 detik sebelum memakai command riwayat lagi.' }, { quoted: msg });
       }
@@ -215,6 +224,13 @@ async function start() {
       if (detail) return void await sock.sendMessage(groupId, { text: detail }, { quoted: msg });
       const tx = await finance.recordTransaction(ctx);
       if (tx) return void await sock.sendMessage(groupId, { text: tx }, { quoted: msg });
+
+      if (/^[+-]/.test(text)) {
+        await sock.sendMessage(groupId, {
+          text: ['⚠️ Format belum lengkap.', '', 'Contoh yang benar:', '+ 10000 (Donasi)', '- 5000 (Beli air)'].join('\n')
+        }, { quoted: msg });
+        return;
+      }
 
       const autoResp = isGroupMessage ? customCommands.handleAutoResponse(ctx) : null;
       if (autoResp?.type === 'image') return void await sock.sendMessage(groupId, { image: autoResp.imageBuffer, caption: autoResp.caption }, { quoted: msg });

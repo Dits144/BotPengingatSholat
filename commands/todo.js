@@ -55,4 +55,11 @@ function handleTodo(ctx, canManage) {
   return null;
 }
 
-module.exports = { handleTodo };
+
+function clearGroupCache(groupId) {
+  for (const k of listCache.keys()) {
+    if (k.startsWith(`${groupId}::`)) listCache.delete(k);
+  }
+}
+
+module.exports = { handleTodo, clearGroupCache };
