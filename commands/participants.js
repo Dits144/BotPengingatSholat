@@ -24,16 +24,16 @@ function cacheKey(groupId, senderId) {
 }
 
 function getHeader(groupId) {
-  const row = db.prepare('SELECT participant_header FROM group_settings WHERE group_id=?').get(groupId);
-  return row?.participant_header || DEFAULT_HEADER;
+  const row = db.prepare('SELECT header_text FROM group_settings WHERE group_id=?').get(groupId);
+  return row?.header_text || DEFAULT_HEADER;
 }
 
 function setHeader(groupId, text) {
   db.prepare(`
-    INSERT INTO group_settings (group_id, participant_header, updated_at)
+    INSERT INTO group_settings (group_id, header_text, updated_at)
     VALUES (?, ?, ?)
     ON CONFLICT(group_id) DO UPDATE SET
-      participant_header=excluded.participant_header,
+      header_text=excluded.header_text,
       updated_at=excluded.updated_at
   `).run(groupId, text, nowIso());
 }

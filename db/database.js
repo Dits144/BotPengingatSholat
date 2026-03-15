@@ -56,6 +56,8 @@ CREATE TABLE IF NOT EXISTS custom_commands (
   group_id TEXT NOT NULL,
   keyword TEXT NOT NULL,
   response TEXT NOT NULL,
+  media_url TEXT,
+  media_type TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   deleted_at TEXT
@@ -66,7 +68,7 @@ ON custom_commands(group_id, keyword);
 
 CREATE TABLE IF NOT EXISTS group_settings (
   group_id TEXT PRIMARY KEY,
-  participant_header TEXT,
+  header_text TEXT,
   weather_location TEXT,
   updated_at TEXT NOT NULL
 );
@@ -77,12 +79,19 @@ CREATE TABLE IF NOT EXISTS reminders (
   remind_type TEXT NOT NULL,
   remind_value TEXT NOT NULL,
   remind_text TEXT NOT NULL,
+  created_by TEXT,
   created_at TEXT NOT NULL,
   deleted_at TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_reminders_group_created
 ON reminders(group_id, created_at ASC);
+
+CREATE TABLE IF NOT EXISTS reminder_dispatch (
+  dispatch_key TEXT PRIMARY KEY,
+  reminder_id INTEGER NOT NULL,
+  sent_at TEXT NOT NULL
+);
 
 CREATE TABLE IF NOT EXISTS todos (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -98,23 +107,28 @@ CREATE INDEX IF NOT EXISTS idx_todos_group_created
 ON todos(group_id, created_at ASC);
 `);
 
+function ensureColumn(table, column, ddl) {
+  const cols = db.prepare(`PRAGMA table_info(${table})`).all();
+  if (!cols.some((c) => c.name === column)) {
+    db.prepare(`ALTER TABLE ${table} ADD COLUMN ${ddl}`).run();
+  }
+}
+
+ensureColumn('custom_commands', 'media_url', 'media_url TEXT');
+ensureColumn('custom_commands', 'media_type', 'media_type TEXT');
+ensureColumn('group_settings', 'header_text', 'header_text TEXT');
+ensureColumn('reminders', 'created_by', 'created_by TEXT');
+
 function nowWibIso() {
   return DateTime.now().setZone(TIMEZONE).toISO();
 }
 
 function insertTransaction(payload) {
-  return db.prepare(`
-    INSERT INTO transactions (group_id, type, amount, note, sender_id, sender_name, created_at)
-    VALUES (@group_id, @type, @amount, @note, @sender_id, @sender_name, @created_at)
-  `).run(payload);
+  return db.prepare(`INSERT INTO transactions (group_id, type, amount, note, sender_id, sender_name, created_at) VALUES (@group_id, @type, @amount, @note, @sender_id, @sender_name, @created_at)`).run(payload);
 }
 
 function updateTransaction(payload) {
-  return db.prepare(`
-    UPDATE transactions
-      SET type=@type, amount=@amount, note=@note, edited_at=@edited_at
-    WHERE id=@id AND deleted_at IS NULL
-  `).run(payload);
+  return db.prepare(`UPDATE transactions SET type=@type, amount=@amount, note=@note, edited_at=@edited_at WHERE id=@id AND deleted_at IS NULL`).run(payload);
 }
 
 function softDeleteTransaction(id) {
@@ -138,8 +152,7 @@ function extendRental(groupId, days, updatedBy) {
     ? now
     : DateTime.fromISO(current.start_at || now.toISO(), { zone: TIMEZONE });
   const baseExpire = current?.expire_at && DateTime.fromISO(current.expire_at, { zone: TIMEZONE }) > now
-    ? DateTime.fromISO(current.expire_at, { zone: TIMEZONE })
-    : now;
+    ? DateTime.fromISO(current.expire_at, { zone: TIMEZONE }) : now;
   const expireAt = baseExpire.plus({ days }).set({ hour: 23, minute: 59, second: 0, millisecond: 0 });
 
   db.prepare(`
@@ -158,14 +171,7 @@ function extendRental(groupId, days, updatedBy) {
 
 function deactivateRental(groupId, updatedBy) {
   const now = nowWibIso();
-  db.prepare(`
-    INSERT INTO group_rentals (group_id, is_active, updated_by, updated_at)
-    VALUES (?, 0, ?, ?)
-    ON CONFLICT(group_id) DO UPDATE SET
-      is_active=0,
-      updated_by=excluded.updated_by,
-      updated_at=excluded.updated_at
-  `).run(groupId, updatedBy, now);
+  db.prepare(`INSERT INTO group_rentals (group_id, is_active, updated_by, updated_at) VALUES (?, 0, ?, ?) ON CONFLICT(group_id) DO UPDATE SET is_active=0, updated_by=excluded.updated_by, updated_at=excluded.updated_at`).run(groupId, updatedBy, now);
 }
 
 function markWarned(groupId) {
@@ -174,13 +180,7 @@ function markWarned(groupId) {
 
 function addOwner(userNumber, userJid) {
   const now = nowWibIso();
-  db.prepare(`
-    INSERT INTO bot_owners (user_number, user_jid, claimed_at)
-    VALUES (?, ?, ?)
-    ON CONFLICT(user_number) DO UPDATE SET
-      user_jid=excluded.user_jid,
-      claimed_at=excluded.claimed_at
-  `).run(userNumber, userJid, now);
+  db.prepare(`INSERT INTO bot_owners (user_number, user_jid, claimed_at) VALUES (?, ?, ?) ON CONFLICT(user_number) DO UPDATE SET user_jid=excluded.user_jid, claimed_at=excluded.claimed_at`).run(userNumber, userJid, now);
 }
 
 function getOwnerNumbers() {

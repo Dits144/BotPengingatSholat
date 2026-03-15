@@ -22,38 +22,40 @@ function setLocation(groupId, location) {
 }
 
 async function handleSetLocation(ctx, canManage) {
-  const m = ctx.text.trim().match(/^lokweather\s+([\s\S]+)$/i);
+  const m = ctx.text.trim().match(/^lokweather(?:\s+([\s\S]+))?$/i);
   if (!m) return null;
   if (!canManage) return '⛔ Hanya admin grup atau owner bot yang boleh ubah lokasi cuaca.';
 
-  const location = m[1].trim();
-  if (!location) return 'Format salah. Contoh: lokweather Bogor';
+  let location = (m[1] || '').trim();
+  if (!location && ctx.location) {
+    location = `${ctx.location.latitude},${ctx.location.longitude}`;
+  }
+
+  if (!location) return 'Format salah. Contoh: lokweather Bogor atau kirim share lokasi dengan caption "lokweather"';
   setLocation(ctx.groupId, location);
   return `📍 Lokasi cuaca diubah ke: ${location}`;
 }
 
 async function handleWeather(ctx) {
-  if (!/^weather$/i.test(ctx.text.trim())) return null;
-  const loc = encodeURIComponent(getLocation(ctx.groupId));
+  if (!/^(weather|cuaca)$/i.test(ctx.text.trim())) return null;
+  const locText = getLocation(ctx.groupId);
+  const loc = encodeURIComponent(locText);
   try {
     const res = await fetch(`https://wttr.in/${loc}?format=j1`);
     if (!res.ok) return '⚠️ Gagal ambil data cuaca saat ini.';
     const json = await res.json();
     const current = json.current_condition?.[0];
-    const today = json.weather?.[0];
     const temp = current?.temp_C ?? '-';
     const desc = current?.weatherDesc?.[0]?.value ?? '-';
     const humidity = current?.humidity ?? '-';
-    const rain = today?.hourly?.[0]?.chanceofrain ?? '-';
+    const rain = json.weather?.[0]?.hourly?.[0]?.chanceofrain ?? '-';
 
     return [
-      '🌤️ INFO CUACA HARI INI',
-      `📍 Lokasi: ${decodeURIComponent(loc)}`,
-      `🌡️ Suhu: ${temp}°C`,
-      `☁️ Kondisi: ${desc}`,
-      `💧 Kelembapan: ${humidity}%`,
-      `🌧️ Peluang Hujan: ${rain}%`,
-      '🛰️ Sumber: BMKG/Weather feed publik'
+      `🌤 Cuaca ${locText}`,
+      `Suhu: ${temp}°C`,
+      `Kondisi: ${desc}`,
+      `Kelembapan: ${humidity}%`,
+      `Peluang Hujan: ${rain}%`
     ].join('\n');
   } catch {
     return '⚠️ Gagal mengambil info cuaca. Coba lagi nanti.';

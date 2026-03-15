@@ -4,7 +4,16 @@ const { formatWib, rentalStatusText } = require('../utils/format');
 const { RENT_WARNING_DAYS, TIMEZONE } = require('../config');
 
 function lockedMessage() {
-  return '🔒 Bot belum diaktifkan di grup ini\n\nHubungi owner untuk aktivasi.';
+  return [
+    '🔒 BOT BELUM DIAKTIFKAN',
+    '',
+    'Bot belum aktif di grup ini atau masa sewa sudah habis.',
+    '',
+    'Hubungi owner untuk aktivasi.',
+    '',
+    'Perintah owner:',
+    '#aktif (idgrup) (hari)'
+  ].join('\n');
 }
 
 function getRentalStatus(groupId) {

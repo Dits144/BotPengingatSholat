@@ -1,9 +1,9 @@
-const { default: makeWASocket, useMultiFileAuthState, fetchLatestBaileysVersion, DisconnectReason } = require('baileys');
+const { default: makeWASocket, useMultiFileAuthState, fetchLatestBaileysVersion, DisconnectReason, downloadContentFromMessage } = require('baileys');
 const pino = require('pino');
 const qrcode = require('qrcode-terminal');
-const { OWNER_NUMBERS, AUTH_DIR, LOG_LEVEL, CLAIM_OWNER_CODE } = require('./config');
-const { addOwner, getOwnerNumbers } = require('./db/database');
-const { normalizeJid, extractUserNumber, getSenderJid, isOwner } = require('./utils/jid');
+const { OWNER_NUMBERS, AUTH_DIR, LOG_LEVEL } = require('./config');
+const { getOwnerNumbers } = require('./db/database');
+const { normalizeJid, getSenderJid, isOwner } = require('./utils/jid');
 const { menuText } = require('./commands/help');
 const { handleCalc } = require('./commands/calc');
 const finance = require('./commands/finance');
@@ -13,7 +13,6 @@ const reminder = require('./commands/reminder');
 const todo = require('./commands/todo');
 const weather = require('./commands/weather');
 const { handleOwnerCommand } = require('./commands/owner');
-const { infoGroup } = require('./commands/info');
 const { isRentalActive, lockedMessage, shouldWarnExpiring } = require('./commands/rental');
 
 const cooldown = new Map();
@@ -43,11 +42,23 @@ function inCooldown(senderId, key, ms = 1000) {
   return false;
 }
 
+async function extractQuotedImageBase64(msg) {
+  const quoted = msg?.message?.extendedTextMessage?.contextInfo?.quotedMessage;
+  const imageMsg = quoted?.imageMessage;
+  if (!imageMsg) return null;
+
+  const stream = await downloadContentFromMessage(imageMsg, 'image');
+  const chunks = [];
+  for await (const chunk of stream) chunks.push(chunk);
+  return Buffer.concat(chunks).toString('base64');
+}
+
 async function start() {
   const { state, saveCreds } = await useMultiFileAuthState(AUTH_DIR);
   const { version } = await fetchLatestBaileysVersion();
 
   const sock = makeWASocket({ version, auth: state, printQRInTerminal: true, logger: pino({ level: LOG_LEVEL }) });
+  reminder.startReminderWorker(sock);
 
   sock.ev.on('creds.update', saveCreds);
   sock.ev.on('connection.update', ({ connection, lastDisconnect, qr }) => {
@@ -76,6 +87,10 @@ async function start() {
     const isGroupMessage = groupId.endsWith('@g.us');
     const senderId = normalizeJid(getSenderJid(msg));
     const senderName = msg.pushName || 'Tanpa Nama';
+    const location = msg.message?.locationMessage ? {
+      latitude: msg.message.locationMessage.degreesLatitude,
+      longitude: msg.message.locationMessage.degreesLongitude
+    } : null;
 
     try {
       const senderIsOwner = isSenderOwner(senderId);
@@ -83,17 +98,6 @@ async function start() {
       if (isGroupMessage) {
         const warning = shouldWarnExpiring(groupId);
         if (warning) await sock.sendMessage(groupId, { text: warning });
-      }
-
-      if (text.trim() === CLAIM_OWNER_CODE) {
-        const senderNumber = extractUserNumber(senderId);
-        if (!senderNumber) {
-          await sock.sendMessage(groupId, { text: 'Gagal klaim owner: nomor pengirim tidak valid.' }, { quoted: msg });
-          return;
-        }
-        addOwner(senderNumber, senderId);
-        await sock.sendMessage(groupId, { text: `✅ Owner berhasil diklaim.\nNomor: ${senderNumber}` }, { quoted: msg });
-        return;
       }
 
       if (/^#/.test(text)) {
@@ -106,7 +110,6 @@ async function start() {
         return;
       }
 
-      // Semua command grup non-owner wajib sewa aktif
       if (isGroupMessage && !isRentalActive(groupId)) {
         await sock.sendMessage(groupId, { text: lockedMessage() }, { quoted: msg });
         return;
@@ -123,21 +126,28 @@ async function start() {
         || /^\d+$/.test(text)
         || /^riwayat(\s+.*)?$/i.test(text)
         || /^(tambah|kurang|kali|bagi)(\s|$)/i.test(text)
-        || /^weather$/i.test(text);
+        || /^(weather|cuaca)$/i.test(text)
+        || /^todolist$/i.test(text)
+        || /^todo\s+lihat$/i.test(text);
 
-      const adminCommands = /^(menu|help|info|[+-]|saldo(\s|$)|edit\s+\d+|hapus\s+\d+|detail\s+\d+|addpeserta\s+|delpeserta\s+no\s+\d+|updatepeserta\s+no\s+\d+|setheader@|command\s+|delcommand\s+|listcommand$|detailcommand\s+|remind\s+|listremind$|noremind\s+|todo\s+|todolist$|doto\s+\d+|lokweather\s+)/i.test(text);
+      const adminCommands = /^(menu|help|info|[+-]|saldo(\s|$)|edit\s+\d+|hapus\s+\d+|detail\s+\d+|addpeserta\s+|delpeserta\s+no\s+\d+|updatepeserta\s+no\s+\d+|setheader@|command\s+|delcommand\s+|listcommand$|detailcommand\s+|remind\s+|listremind$|noremind\s+|todo\s+tambah\s+|todo\s+selesai\s+\d+|doto\s+\d+|lokweather\s+)/i.test(text);
 
       if (!canAdminManage && adminCommands && !userAllowed) {
         await sock.sendMessage(groupId, { text: '⛔ Perintah ini hanya untuk admin grup / owner bot.' }, { quoted: msg });
         return;
       }
 
-      const ctx = { text, groupId, senderId, senderName };
+      const ctx = { text, groupId, senderId, senderName, location };
 
-      if (/^tambah$/i.test(text)) {
-        await sock.sendMessage(groupId, { text: 'Format kalkulator: tambah 100 50' }, { quoted: msg });
+      if (/^(tambah|kurang|kali|bagi)$/i.test(text)) {
+        await sock.sendMessage(groupId, {
+          text: ['🧮 FORMAT KALKULATOR', '', 'tambah 10 5', 'kurang 10 5', 'kali 10 5', 'bagi 10 5'].join('\n')
+        }, { quoted: msg });
         return;
       }
+
+      const setHeader = participants.handleSetHeader(ctx, canAdminManage);
+      if (setHeader) return void await sock.sendMessage(groupId, { text: setHeader }, { quoted: msg });
 
       const listPeserta = participants.handleListPeserta(ctx);
       if (listPeserta) return void await sock.sendMessage(groupId, { text: listPeserta }, { quoted: msg });
@@ -154,10 +164,8 @@ async function start() {
       const updatePeserta = participants.handleUpdatePeserta(ctx, canAdminManage);
       if (updatePeserta) return void await sock.sendMessage(groupId, { text: updatePeserta }, { quoted: msg });
 
-      const setHeader = participants.handleSetHeader(ctx, canAdminManage);
-      if (setHeader) return void await sock.sendMessage(groupId, { text: setHeader }, { quoted: msg });
-
-      const saveCmd = customCommands.handleSaveCommand(ctx, canAdminManage);
+      const quotedImageBase64 = /^command\s+/i.test(text) ? await extractQuotedImageBase64(msg) : null;
+      const saveCmd = await customCommands.handleSaveCommand({ ...ctx, quotedImageBase64 }, canAdminManage);
       if (saveCmd) return void await sock.sendMessage(groupId, { text: saveCmd }, { quoted: msg });
 
       const listCmd = customCommands.handleListCommand(ctx);
@@ -187,16 +195,7 @@ async function start() {
       const weatherResp = await weather.handleWeather(ctx);
       if (weatherResp) return void await sock.sendMessage(groupId, { text: weatherResp }, { quoted: msg });
 
-      if (/^(menu|help)$/i.test(text)) {
-        await sock.sendMessage(groupId, { text: menuText() }, { quoted: msg });
-        return;
-      }
-
-      if (/^info$/i.test(text)) {
-        const resp = await infoGroup(sock, groupId);
-        await sock.sendMessage(groupId, { text: resp }, { quoted: msg });
-        return;
-      }
+      if (/^(menu|help)$/i.test(text)) return void await sock.sendMessage(groupId, { text: menuText() }, { quoted: msg });
 
       const calc = handleCalc(text);
       if (calc) return void await sock.sendMessage(groupId, { text: calc }, { quoted: msg });
@@ -225,7 +224,14 @@ async function start() {
       if (tx) return void await sock.sendMessage(groupId, { text: tx }, { quoted: msg });
 
       const autoResp = isGroupMessage ? customCommands.handleAutoResponse(ctx) : null;
-      if (autoResp) return void await sock.sendMessage(groupId, { text: autoResp }, { quoted: msg });
+      if (autoResp?.type === 'image') {
+        await sock.sendMessage(groupId, { image: autoResp.imageBuffer, caption: autoResp.caption }, { quoted: msg });
+        return;
+      }
+      if (autoResp?.type === 'text') {
+        await sock.sendMessage(groupId, { text: autoResp.text }, { quoted: msg });
+        return;
+      }
 
       if (/^[+-]/.test(text)) {
         await sock.sendMessage(groupId, { text: 'Format transaksi salah. Contoh:\n+ 15000 (Donasi Pak RT)\n- 12000 (Beli air mineral)' }, { quoted: msg });

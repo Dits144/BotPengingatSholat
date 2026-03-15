@@ -10,7 +10,7 @@ function normalizeKeyword(keyword = '') {
   return keyword.trim().toUpperCase();
 }
 
-function handleSaveCommand(ctx, canManage) {
+async function handleSaveCommand(ctx, canManage) {
   const raw = ctx.text.trim();
   if (!/^command\s+/i.test(raw)) return null;
   if (!canManage) return '⛔ Hanya admin grup atau owner bot yang boleh command.';
@@ -26,22 +26,27 @@ function handleSaveCommand(ctx, canManage) {
   if (keyword.length > 20) return 'Keyword maksimal 20 karakter.';
   if (!response) return 'Output/response wajib diisi.';
 
+  const mediaType = ctx.quotedImageBase64 ? 'image' : null;
+  const mediaUrl = ctx.quotedImageBase64 || null;
+
   const existing = db.prepare('SELECT id FROM custom_commands WHERE group_id=? AND keyword=?').get(ctx.groupId, keyword);
   const now = nowIso();
   if (existing) {
     db.prepare(`
       UPDATE custom_commands
-      SET response=?, updated_at=?, deleted_at=NULL
+      SET response=?, media_url=COALESCE(?, media_url), media_type=COALESCE(?, media_type), updated_at=?, deleted_at=NULL
       WHERE id=?
-    `).run(response, now, existing.id);
+    `).run(response, mediaUrl, mediaType, now, existing.id);
   } else {
     db.prepare(`
-      INSERT INTO custom_commands (group_id, keyword, response, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?)
-    `).run(ctx.groupId, keyword, response, now, now);
+      INSERT INTO custom_commands (group_id, keyword, response, media_url, media_type, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(ctx.groupId, keyword, response, mediaUrl, mediaType, now, now);
   }
 
-  return `✅ Command "${keyword}" disimpan`;
+  return ctx.quotedImageBase64
+    ? `✅ Command "${keyword}" disimpan (dengan foto)`
+    : `✅ Command "${keyword}" disimpan`;
 }
 
 function handleListCommand(ctx) {
@@ -65,11 +70,12 @@ function handleDeleteCommand(ctx, canManage) {
   const keyword = normalizeKeyword(m[1]);
   if (!keyword) return 'Keyword wajib diisi.';
 
+  const now = nowIso();
   const res = db.prepare(`
     UPDATE custom_commands
     SET deleted_at=?, updated_at=?
     WHERE group_id=? AND keyword=? AND deleted_at IS NULL
-  `).run(nowIso(), nowIso(), ctx.groupId, keyword);
+  `).run(now, now, ctx.groupId, keyword);
 
   if (!res.changes) return `Command "${keyword}" tidak ditemukan.`;
   return `🗑️ Command "${keyword}" dihapus`;
@@ -83,12 +89,13 @@ function handleDetailCommand(ctx) {
   if (!keyword) return 'Keyword wajib diisi.';
 
   const row = db.prepare(`
-    SELECT response FROM custom_commands
+    SELECT response, media_type FROM custom_commands
     WHERE group_id=? AND keyword=? AND deleted_at IS NULL
   `).get(ctx.groupId, keyword);
 
   if (!row) return `Command "${keyword}" tidak ditemukan.`;
-  return `📌 DETAIL COMMAND ${keyword}\n${row.response}`;
+  const mediaInfo = row.media_type ? `\nMedia: ${row.media_type}` : '';
+  return `📌 DETAIL COMMAND ${keyword}${mediaInfo}\n${row.response}`;
 }
 
 function handleAutoResponse(ctx) {
@@ -96,11 +103,19 @@ function handleAutoResponse(ctx) {
   if (!keyword) return null;
 
   const row = db.prepare(`
-    SELECT response FROM custom_commands
+    SELECT response, media_url, media_type FROM custom_commands
     WHERE group_id=? AND keyword=? AND deleted_at IS NULL
   `).get(ctx.groupId, keyword);
 
-  return row ? row.response : null;
+  if (!row) return null;
+  if (row.media_type === 'image' && row.media_url) {
+    return {
+      type: 'image',
+      caption: row.response,
+      imageBuffer: Buffer.from(row.media_url, 'base64')
+    };
+  }
+  return { type: 'text', text: row.response };
 }
 
 module.exports = {

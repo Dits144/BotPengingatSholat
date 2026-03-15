@@ -2,8 +2,14 @@ const { DateTime } = require('luxon');
 const { db } = require('../db/database');
 const { TIMEZONE } = require('../config');
 
+let workerStarted = false;
+
+function now() {
+  return DateTime.now().setZone(TIMEZONE);
+}
+
 function nowIso() {
-  return DateTime.now().setZone(TIMEZONE).toISO();
+  return now().toISO();
 }
 
 function parseRemind(raw) {
@@ -27,9 +33,9 @@ function handleRemind(ctx, canManage) {
   if (parsed.error) return parsed.error;
 
   db.prepare(`
-    INSERT INTO reminders (group_id, remind_type, remind_value, remind_text, created_at)
-    VALUES (?, ?, ?, ?, ?)
-  `).run(ctx.groupId, parsed.type, parsed.value, parsed.text, nowIso());
+    INSERT INTO reminders (group_id, remind_type, remind_value, remind_text, created_at, created_by)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `).run(ctx.groupId, parsed.type, parsed.value, parsed.text, nowIso(), ctx.senderId);
 
   return `⏰ Reminder disimpan: ${parsed.value} - ${parsed.text}`;
 }
@@ -56,15 +62,58 @@ function handleNoRemind(ctx, canManage) {
   const value = m[1].trim();
   if (!value) return 'Format salah. Contoh: noremind 05:00 atau noremind 17/08/2026';
 
-  const now = nowIso();
   const res = db.prepare(`
     UPDATE reminders
     SET deleted_at=?
     WHERE group_id=? AND remind_value=? AND deleted_at IS NULL
-  `).run(now, ctx.groupId, value);
+  `).run(nowIso(), ctx.groupId, value);
 
   if (!res.changes) return `Reminder ${value} tidak ditemukan.`;
   return `🗑️ Reminder ${value} dihapus.`;
 }
 
-module.exports = { handleRemind, handleListRemind, handleNoRemind };
+async function processDueReminders(sock) {
+  const current = now();
+  const hhmm = current.toFormat('HH:mm');
+  const ddmmyyyy = current.toFormat('dd/MM/yyyy');
+
+  const rows = db.prepare(`
+    SELECT * FROM reminders
+    WHERE deleted_at IS NULL
+  `).all();
+
+  for (const r of rows) {
+    const isDue = (r.remind_type === 'time' && r.remind_value === hhmm)
+      || (r.remind_type === 'date' && r.remind_value === ddmmyyyy);
+    if (!isDue) continue;
+
+    const dispatchKey = r.remind_type === 'time'
+      ? `${r.id}:${ddmmyyyy}:${hhmm}`
+      : `${r.id}:${ddmmyyyy}`;
+
+    try {
+      const inserted = db.prepare(`
+        INSERT OR IGNORE INTO reminder_dispatch (dispatch_key, reminder_id, sent_at)
+        VALUES (?, ?, ?)
+      `).run(dispatchKey, r.id, nowIso());
+
+      if (!inserted.changes) continue;
+
+      await sock.sendMessage(r.group_id, {
+        text: `⏰ Reminder\n${r.remind_value} - ${r.remind_text}`
+      });
+    } catch (e) {
+      console.error('Reminder send error:', e.message);
+    }
+  }
+}
+
+function startReminderWorker(sock) {
+  if (workerStarted) return;
+  workerStarted = true;
+  setInterval(() => {
+    processDueReminders(sock).catch((e) => console.error('Reminder worker error:', e.message));
+  }, 30000);
+}
+
+module.exports = { handleRemind, handleListRemind, handleNoRemind, startReminderWorker };
