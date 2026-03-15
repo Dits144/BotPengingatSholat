@@ -43,7 +43,8 @@ async function handleOwnerCommand({ sock, text, groupId, isGroupMessage }) {
     if (!meta) return 'Group tidak ditemukan / bot tidak ada di grup tersebut.';
     const rental = getRental(targetGroupId);
     const status = rentalStatusText(rental);
-    return ['ℹ️ INFO GROUP', `Nama: ${meta.subject}`, `ID: ${meta.id}`, `Member: ${meta.participants.length}`, '', `🔑 Status Sewa: ${status.status}`, `Expired: ${rental?.expire_at ? `${formatWib(rental.expire_at)} WIB` : '-'}`, `Sisa: ${status.status === 'AKTIF' ? `${status.remainingDays} hari` : '-'}`].join('\n');
+    const sewaText = status.status === 'AKTIF' ? 'AKTIF' : 'Belum Aktif';
+    return ['ℹ️ INFO GROUP', `Nama Grup: ${meta.subject}`, `ID Grup: ${meta.id}`, '', `Status Sewa: ${sewaText}`, `Expired: ${rental?.expire_at ? `${formatWib(rental.expire_at)} WIB` : '-'}`].join('\n');
   }
 
   if (text.trim().toLowerCase() === '#aktif') return ['⚠️ Format yang benar:', '#aktif (idgrup) (hari)', '', 'Contoh:', '#aktif 120363xxxx@g.us 30'].join('\n');

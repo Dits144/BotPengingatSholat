@@ -25,7 +25,11 @@
 ## Logic inti
 
 ### 1) Silent rental gate
-Jika grup tidak aktif sewa dan pengirim bukan owner => bot **diam** (tidak membalas).
+Jika grup tidak aktif sewa, bot akan diam untuk semua command biasa.
+
+Pengecualian saat belum aktif sewa (khusus owner):
+- #infogroup
+- #aktif
 
 ### 2) Owner command yang tetap jalan
 - `#infogroup`
@@ -33,6 +37,8 @@ Jika grup tidak aktif sewa dan pengirim bukan owner => bot **diam** (tidak memba
 - `#nonaktif`
 - `#statussewa`
 - `#broadcast`
+
+Catatan: jika grup belum aktif sewa, owner hanya bisa pakai `#infogroup` dan `#aktif`.
 
 ### 3) Typo suggestion
 Jika command typo tapi mirip (Levenshtein), bot memberi saran command paling dekat.

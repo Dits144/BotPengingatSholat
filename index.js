@@ -41,6 +41,12 @@ function isSenderOwner(senderJid) {
   return isOwner(senderJid, [...OWNER_NUMBERS, ...getOwnerNumbers()]);
 }
 
+
+function isAllowedWhenInactive(text) {
+  const cmd = String(text || '').trim().toLowerCase();
+  return cmd === '#infogroup' || cmd.startsWith('#infogroup ') || cmd.startsWith('#aktif ');
+}
+
 function inCooldown(senderId, key, ms = 1000) {
   const now = Date.now();
   const cacheKey = `${senderId}::${key}`;
@@ -125,14 +131,18 @@ async function start() {
       }
 
       if (/^#/.test(text)) {
-        if (!senderIsOwner) return; // silent
+        if (!senderIsOwner) return; // silent for non-owner
+
+        // jika grup belum aktif sewa, hanya #infogroup dan #aktif yang boleh dipakai
+        if (isGroupMessage && !isRentalActive(groupId) && !isAllowedWhenInactive(text)) return;
+
         const resp = await handleOwnerCommand({ sock, text, groupId, isGroupMessage });
         if (resp) await sock.sendMessage(groupId, { text: resp }, { quoted: msg });
         return;
       }
 
-      // silent mode rental gate
-      if (isGroupMessage && !isRentalActive(groupId) && !senderIsOwner) return;
+      // silent mode rental gate untuk command non-owner/non-#
+      if (isGroupMessage && !isRentalActive(groupId)) return;
 
       let senderIsAdmin = false;
       if (isGroupMessage) {

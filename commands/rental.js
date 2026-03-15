@@ -3,19 +3,6 @@ const { db, getRental, isRentalActive, markWarned } = require('../db/database');
 const { formatWib } = require('../utils/format');
 const { TIMEZONE } = require('../config');
 
-function lockedMessage() {
-  return [
-    '🔒 BOT BELUM DIAKTIFKAN',
-    '',
-    'Bot belum aktif di grup ini atau masa sewa sudah habis.',
-    '',
-    'Hubungi owner untuk aktivasi.',
-    '',
-    'Perintah owner:',
-    '#aktif (idgrup) (hari)'
-  ].join('\n');
-}
-
 function shouldWarnExpiring(groupId) {
   const rental = getRental(groupId);
   if (!rental || !rental.is_active || !rental.expire_at) return null;
@@ -45,4 +32,4 @@ function shouldWarnExpiring(groupId) {
   ].join('\n');
 }
 
-module.exports = { lockedMessage, isRentalActive, shouldWarnExpiring };
+module.exports = { isRentalActive, shouldWarnExpiring };
