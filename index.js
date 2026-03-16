@@ -19,6 +19,7 @@ const { handleOwnerCommand } = require('./commands/owner');
 const { isRentalActive, shouldWarnExpiring } = require('./commands/rental');
 const { suggestCommand } = require('./utils/typo');
 const { handleClearAll } = require('./commands/adminTools');
+const { infoGroup } = require('./commands/info');
 
 const cooldown = new Map();
 const COMMAND_CANDIDATES = [
@@ -42,9 +43,10 @@ function isSenderOwner(senderJid) {
   return isOwner(senderJid, [...OWNER_NUMBERS, ...getOwnerNumbers()]);
 }
 
-function isAllowedWhenInactive(text) {
-  const cmd = String(text || '').trim().toLowerCase();
-  return cmd === '#infogroup' || cmd.startsWith('#infogroup ') || cmd.startsWith('#aktif ');
+function parseAddSewaDays(text) {
+  const m = String(text || '').trim().match(/^addsewa\s+(\d+)$/i);
+  if (!m) return null;
+  return Number(m[1]);
 }
 
 function inCooldown(senderId, key, ms = 1000) {
@@ -115,6 +117,7 @@ async function start() {
 
     const groupId = msg.key.remoteJid;
     const isGroupMessage = groupId.endsWith('@g.us');
+    if (!isGroupMessage) return;
     const senderId = normalizeJid(getSenderJid(msg));
     const senderName = msg.pushName || 'Tanpa Nama';
     const location = msg.message?.locationMessage ? {
@@ -132,13 +135,33 @@ async function start() {
 
       if (/^#/.test(text)) {
         if (!senderIsOwner) return;
-        if (isGroupMessage && !isRentalActive(groupId) && !isAllowedWhenInactive(text)) return;
+        if (!isRentalActive(groupId)) return;
         const resp = await handleOwnerCommand({ sock, text, groupId, isGroupMessage });
         if (resp) await sock.sendMessage(groupId, { text: resp }, { quoted: msg });
         return;
       }
 
-      if (isGroupMessage && !isRentalActive(groupId)) return;
+      if (!isRentalActive(groupId)) {
+        if (/^info$/i.test(text)) {
+          const info = await infoGroup(sock, groupId);
+          if (info) await sock.sendMessage(groupId, { text: `${info}\nStatus Sewa: Belum Aktif` }, { quoted: msg });
+          return;
+        }
+
+        if (/^addsewa$/i.test(text)) {
+          if (!senderIsOwner) return;
+          await sock.sendMessage(groupId, { text: '⚠️ Format yang benar:\naddsewa (hari)\n\nContoh:\naddsewa 30' }, { quoted: msg });
+          return;
+        }
+
+        const days = parseAddSewaDays(text);
+        if (days) {
+          if (!senderIsOwner) return;
+          const resp = await handleOwnerCommand({ sock, text: `#aktif ${groupId} ${days}`, groupId, isGroupMessage: true });
+          if (resp) await sock.sendMessage(groupId, { text: resp }, { quoted: msg });
+        }
+        return;
+      }
 
       let senderIsAdmin = false;
       if (isGroupMessage) {
@@ -239,8 +262,6 @@ async function start() {
       const suggest = suggestCommand(text, COMMAND_CANDIDATES);
       if (suggest) {
         await sock.sendMessage(groupId, { text: `❓ Perintah tidak ditemukan.\n\nApakah maksud Anda: ${suggest}\nKetik perintah yang benar untuk melanjutkan.` }, { quoted: msg });
-      } else if (/^[a-z#]/i.test(text)) {
-        await sock.sendMessage(groupId, { text: '❌ Perintah tidak dikenali.\nKetik help untuk melihat daftar perintah.' }, { quoted: msg });
       }
     } catch (err) {
       console.error(err);
