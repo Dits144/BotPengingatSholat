@@ -8,18 +8,19 @@ function must(name: string, value?: string): string {
 }
 
 const encryptionKey = must('ENCRYPTION_KEY', process.env.ENCRYPTION_KEY);
-if (encryptionKey.length < 32) {
-  throw new Error('ENCRYPTION_KEY must be at least 32 characters');
-}
+if (encryptionKey.length < 32) throw new Error('ENCRYPTION_KEY minimal 32 karakter');
 
 export const env = {
   botToken: must('BOT_TOKEN', process.env.BOT_TOKEN),
-  adminIds: must('ADMIN_IDS', process.env.ADMIN_IDS)
-    .split(',')
-    .map((v) => Number(v.trim())),
+  ownerId: Number(process.env.OWNER_ID || '1370163983'),
   timezone: process.env.TIMEZONE || 'Asia/Jakarta',
   encryptionKey,
   databaseClient: process.env.DATABASE_CLIENT || 'sqlite',
   databaseUrl: process.env.DATABASE_URL || './data/bot.db',
-  rateLimitSeconds: Number(process.env.RATE_LIMIT_SECONDS || 3)
+  rateLimitSeconds: Number(process.env.RATE_LIMIT_SECONDS || '2'),
+  qrisImage: process.env.QRIS_IMAGE || '',
+  topupPresets: (process.env.TOPUP_PRESETS || '5000,10000,20000,50000,100000')
+    .split(',')
+    .map((v) => Number(v.trim()))
+    .filter((v) => Number.isFinite(v) && v > 0)
 };

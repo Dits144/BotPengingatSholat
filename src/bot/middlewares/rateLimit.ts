@@ -1,10 +1,10 @@
-import { NextFunction } from 'telegraf';
+import { MiddlewareFn } from 'telegraf';
 import { env } from '../../config/env';
 import { BotContext } from '../types';
 
 const userHits = new Map<number, number>();
 
-export async function rateLimit(ctx: BotContext, next: NextFunction) {
+export const rateLimit: MiddlewareFn<BotContext> = async (ctx, next) => {
   if (!ctx.from) return;
   const now = Date.now();
   const last = userHits.get(ctx.from.id) || 0;
@@ -14,4 +14,4 @@ export async function rateLimit(ctx: BotContext, next: NextFunction) {
   }
   userHits.set(ctx.from.id, now);
   return next();
-}
+};
